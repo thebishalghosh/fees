@@ -1,0 +1,44 @@
+* {
+    box-sizing: border-box;
+}
+
+html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 5.5rem;
+}
+
+body {
+    margin: 0;
+    color: var(--ink);
+    background: var(--surface);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4,
+.serif {
+    font-family: var(--font-serif);
+    letter-spacing: -.01em;
+}
+
+a {
+    color: var(--cobalt);
+    text-decoration: none;
+}
+
+a:hover {
+    color: var(--cobalt-700);
+}
+
+:focus-visible {
+    outline: 3px solid var(--gold);
+    outline-offset: 3px;
+}
+
+::selection {
+    color: var(--cobalt-900);
+    background: var(--gold-soft);
+}

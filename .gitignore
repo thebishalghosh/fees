@@ -1,0 +1,15 @@
+.env
+.env.local
+.env.*
+!.env.example
+
+vendor/
+node_modules/
+storage/logs/
+storage/tmp/
+logs/
+*.log
+php_errors.log
+.cache/
+.DS_Store
+Thumbs.db

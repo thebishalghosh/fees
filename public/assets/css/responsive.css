@@ -1,0 +1,156 @@
+@media (max-width: 991.98px) {
+    .site-navbar-public {
+        background: rgb(0 24 63 / 90%);
+        backdrop-filter: blur(12px);
+    }
+
+    .site-navbar .navbar-collapse {
+        margin-top: .8rem;
+        padding: .7rem 1rem 1rem;
+        border: 1px solid rgb(255 255 255 / 12%);
+        border-radius: 16px;
+        background: rgb(0 24 63 / 97%);
+    }
+
+    .site-navbar .nav-link {
+        padding: .65rem .2rem;
+    }
+
+    .hero {
+        padding: 140px 0 82px;
+    }
+
+    .app-sidebar {
+        width: min(84vw, 300px);
+        flex: 0 0 auto;
+        border: 0;
+    }
+
+    .mobile-sidebar-control {
+        display: block;
+    }
+
+    .footer-main {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .footer-links {
+        grid-column: 1 / -1;
+        justify-content: flex-start;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .section-pad {
+        padding: 72px 0;
+    }
+
+    .hero {
+        padding: 125px 0 72px;
+    }
+
+    .hero h1 {
+        font-size: clamp(2.35rem, 11vw, 3.5rem);
+    }
+
+    .hero-points {
+        gap: .8rem 1rem;
+        font-size: .76rem;
+    }
+
+    .product-preview {
+        padding: .45rem;
+    }
+
+    .preview-window {
+        padding: .8rem;
+        transform: none;
+    }
+
+    .preview-float {
+        right: -.2rem;
+        bottom: .2rem;
+    }
+
+    .trust-strip .row > div > div {
+        justify-content: flex-start;
+        font-size: .72rem;
+    }
+
+    .admission-flow {
+        grid-template-columns: 1fr;
+    }
+
+    .admission-flow > div {
+        min-height: auto;
+    }
+
+    .admission-flow i {
+        margin: .75rem 0;
+    }
+
+    .admin-module-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .security-banner {
+        align-items: flex-start;
+    }
+
+    .security-banner > i {
+        font-size: 2.5rem;
+    }
+
+    .footer-main {
+        grid-template-columns: 1fr;
+        gap: 1.2rem;
+    }
+
+    .footer-links {
+        grid-column: auto;
+    }
+
+    .card-panel {
+        flex-direction: column;
+    }
+}
+
+@media (max-width: 575.98px) {
+    .hero-badge {
+        align-items: flex-start;
+        max-width: 100%;
+        font-size: .68rem;
+    }
+
+    .hero .btn {
+        width: 100%;
+    }
+
+    .preview-students {
+        grid-template-columns: 1fr;
+    }
+
+    .admin-module-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .security-banner > i {
+        display: none;
+    }
+
+    .footer-bottom {
+        flex-direction: column;
+        gap: .4rem;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        scroll-behavior: auto !important;
+        transition-duration: .01ms !important;
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+    }
+}

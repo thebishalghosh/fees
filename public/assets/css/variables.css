@@ -1,0 +1,23 @@
+:root {
+    color-scheme: light;
+    --cobalt: #0047ab;
+    --cobalt-600: #003a8c;
+    --cobalt-700: #002d6e;
+    --cobalt-900: #00183f;
+    --cobalt-ink: #06122b;
+    --cobalt-300: #4f86d9;
+    --cobalt-100: #e6eefb;
+    --cobalt-50: #f3f7fd;
+    --gold: #c9a35b;
+    --gold-soft: #e9d3a3;
+    --ink: #0e1a33;
+    --muted: #5b6782;
+    --line: #e3e9f4;
+    --surface: #fff;
+    --radius: 20px;
+    --radius-sm: 12px;
+    --shadow-lg: 0 30px 70px -25px rgb(0 45 110 / 35%);
+    --shadow-md: 0 14px 40px -18px rgb(0 45 110 / 28%);
+    --font-sans: "Inter", system-ui, sans-serif;
+    --font-serif: "Playfair Display", Georgia, serif;
+}

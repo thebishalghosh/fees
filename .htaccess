@@ -1,0 +1,33 @@
+Options -Indexes -MultiViews
+RewriteEngine On
+RewriteBase /fees/
+
+# Never serve hidden files or application internals through Apache.
+RewriteRule "(^|/)\." - [F,END]
+RewriteRule ^(?:config|includes|services|tests|vendor|storage|cron|database)(?:/|$) - [F,END,NC]
+RewriteRule ^integrations/(?!payment-gateway/(?:create-order|webhook)(?:\.php)?$) - [F,END,NC]
+RewriteRule ^api/?$ - [R=404,END,NC]
+
+# Stable authentication endpoints. POST bodies remain on the original request.
+RewriteRule ^login/?$ index.php?login=1 [END,QSA]
+RewriteRule ^login/staff/?$ auth/login.php [END]
+RewriteRule ^login/parent/?$ auth/parent-login.php [END]
+RewriteRule ^verify-otp/?$ auth/verify-otp.php [END]
+RewriteRule ^resend-otp/?$ auth/resend-otp.php [END]
+RewriteRule ^verify-parent-email/?$ auth/verify-parent-email.php [END]
+RewriteRule ^request-parent-verification/?$ auth/request-parent-verification.php [END]
+RewriteRule ^logout/?$ auth/logout.php [END]
+
+# Keep the class creation handler outside the classes.php route namespace.
+RewriteRule ^admin/academics/classes/create/?$ admin/academics/create-class.php [END,QSA]
+
+# Handle the trailing-slash URL Apache may have cached when a conflicting directory existed.
+RewriteRule ^admin/academics/classes/?$ admin/academics/classes.php [END,QSA]
+
+# Resolve clean application paths only when the corresponding PHP handler exists.
+RewriteCond %{REQUEST_FILENAME}.php -f
+RewriteRule ^(auth|admin|parent)/(.+)$ $1/$2.php [END,QSA]
+
+<FilesMatch "(?i)^(?:\.env(?:\..*)?|composer\.(?:json|lock)|.*\.(?:sql|log|ini|ya?ml|bak|old|dist))$">
+    Require all denied
+</FilesMatch>

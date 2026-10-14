@@ -1,0 +1,219 @@
+.parent-attendance-panel {
+    padding-top: 1rem;
+}
+
+.parent-attendance-student {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.25rem;
+    padding: 1rem 0;
+    border-bottom: 1px solid #edf1f6;
+}
+
+.parent-attendance-eyebrow {
+    color: #718096;
+    font-size: .68rem;
+    font-weight: 750;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.parent-attendance-student h3 {
+    margin: .25rem 0;
+    color: #153255;
+    font-size: 1.12rem;
+    font-weight: 750;
+}
+
+.parent-attendance-student p,
+.parent-attendance-history-heading p {
+    margin: 0;
+    color: #75849a;
+    font-size: .76rem;
+}
+
+.parent-attendance-child-switcher {
+    display: grid;
+    grid-template-columns: minmax(180px, 240px) auto;
+    align-items: end;
+    gap: .5rem;
+}
+
+.parent-attendance-child-switcher label,
+.parent-attendance-filters label {
+    display: grid;
+    gap: .35rem;
+    color: #53657d;
+    font-size: .7rem;
+    font-weight: 700;
+}
+
+.parent-attendance-child-switcher label {
+    grid-column: 1 / -1;
+}
+
+.parent-attendance-child-switcher .form-select,
+.parent-attendance-filters .form-select,
+.parent-attendance-filters .form-control {
+    min-height: 38px;
+    border-color: #e1e8f1;
+    border-radius: 8px;
+    color: #304760;
+    font-size: .75rem;
+}
+
+.parent-attendance-filters {
+    display: grid;
+    grid-template-columns: minmax(135px, 1fr) minmax(145px, 1fr) minmax(145px, 1fr) auto auto;
+    align-items: end;
+    gap: .7rem;
+    padding: 1rem 0;
+}
+
+.parent-attendance-filters .btn {
+    min-height: 38px;
+    font-size: .73rem;
+}
+
+.parent-attendance-filter-note {
+    margin: -.35rem 0 .7rem;
+    color: #8390a2;
+    font-size: .68rem;
+}
+
+.parent-attendance-summary {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: .75rem;
+    padding: .5rem 0 1.25rem;
+}
+
+.parent-attendance-summary article {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: .65rem;
+    padding: .85rem;
+    border: 1px solid #edf1f6;
+    border-radius: 11px;
+    background: #fbfcfe;
+}
+
+.parent-attendance-summary article > span {
+    display: grid;
+    width: 2.1rem;
+    height: 2.1rem;
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: 9px;
+    background: #edf4ff;
+    color: #3265b5;
+}
+
+.parent-attendance-summary article:nth-child(3) > span {
+    background: #fff1ef;
+    color: #b95145;
+}
+
+.parent-attendance-summary article:nth-child(4) > span {
+    background: #fff8e7;
+    color: #a87318;
+}
+
+.parent-attendance-summary article div {
+    display: grid;
+    min-width: 0;
+    gap: .2rem;
+}
+
+.parent-attendance-summary small {
+    color: #718096;
+    font-size: .65rem;
+}
+
+.parent-attendance-summary strong {
+    color: #193653;
+    font-size: 1.08rem;
+    font-weight: 750;
+    line-height: 1.2;
+}
+
+.parent-attendance-history-heading {
+    display: flex;
+    justify-content: space-between;
+    padding: .8rem 0 .65rem;
+    border-top: 1px solid #edf1f6;
+}
+
+.parent-attendance-history-heading h3 {
+    margin: 0 0 .25rem;
+    color: #193653;
+    font-size: .92rem;
+    font-weight: 750;
+}
+
+.parent-attendance-status {
+    display: inline-flex;
+    padding: .26rem .55rem;
+    border-radius: 20px;
+    background: #eaf6ef;
+    color: #287a4e;
+    font-size: .68rem;
+    font-weight: 750;
+}
+
+.parent-attendance-status.is-absent {
+    background: #fff0ee;
+    color: #ae4f43;
+}
+
+.parent-attendance-status.is-late {
+    background: #fff6e3;
+    color: #9a6a14;
+}
+
+.parent-attendance-table {
+    margin-bottom: .5rem;
+}
+
+@media (max-width: 900px) {
+    .parent-attendance-summary {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .parent-attendance-filters {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 575px) {
+    .parent-attendance-student {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .parent-attendance-child-switcher {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .parent-attendance-summary {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .parent-attendance-summary article {
+        padding: .7rem;
+    }
+
+    .parent-attendance-summary .is-percentage {
+        grid-column: 1 / -1;
+    }
+
+    .parent-attendance-filters {
+        grid-template-columns: 1fr;
+    }
+
+    .parent-attendance-filters .btn {
+        width: 100%;
+    }
+}

@@ -1,0 +1,630 @@
+.parent-children-breadcrumb {
+    margin-bottom: 1.1rem;
+    font-size: .82rem;
+}
+
+.parent-children-breadcrumb a {
+    color: var(--cobalt-700);
+    text-decoration: none;
+}
+
+.parent-children-summary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+}
+
+.parent-children-summary-card {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: .85rem;
+    padding: 1rem 1.1rem;
+    border: 1px solid #e7ecf3;
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 5px 16px rgb(29 52 84 / 4%);
+}
+
+.parent-children-summary-icon {
+    display: grid;
+    width: 2.7rem;
+    height: 2.7rem;
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: 11px;
+    font-size: 1.1rem;
+}
+
+.parent-children-summary-icon.is-blue {
+    background: #edf4ff;
+    color: #2861bd;
+}
+
+.parent-children-summary-icon.is-green {
+    background: #eaf8f0;
+    color: #268153;
+}
+
+.parent-children-summary-icon.is-amber {
+    background: #fff5df;
+    color: #a56b08;
+}
+
+.parent-children-summary-card div {
+    display: grid;
+    gap: .12rem;
+}
+
+.parent-children-summary-card div span {
+    color: #718096;
+    font-size: .75rem;
+}
+
+.parent-children-summary-card strong {
+    color: #142b4a;
+    font-size: 1.25rem;
+    font-weight: 750;
+    line-height: 1.25;
+}
+
+.parent-children-panel {
+    padding: 1.2rem;
+    border: 1px solid #e7ecf3;
+    border-radius: 16px;
+    background: #fff;
+    box-shadow: 0 6px 20px rgb(29 52 84 / 4%);
+}
+
+.parent-children-panel-heading,
+.parent-payments-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.parent-children-panel-heading {
+    margin-bottom: 1.1rem;
+}
+
+.parent-children-panel-heading h2,
+.parent-payments-heading h3 {
+    margin: 0;
+    color: #153255;
+    font-size: 1rem;
+    font-weight: 750;
+}
+
+.parent-children-panel-heading p,
+.parent-payments-heading p {
+    margin: .25rem 0 0;
+    color: #78869a;
+    font-size: .78rem;
+}
+
+.parent-children-count {
+    padding: .35rem .65rem;
+    border: 1px solid #e3eaf4;
+    border-radius: 99px;
+    color: #526783;
+    font-size: .72rem;
+    font-weight: 650;
+    white-space: nowrap;
+}
+
+.parent-children-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+.parent-child-card {
+    min-width: 0;
+    padding: 1rem;
+    border: 1px solid #e9edf4;
+    border-radius: 13px;
+    background: #fff;
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+.parent-child-card:hover {
+    border-color: #d4e0f1;
+    box-shadow: 0 7px 18px rgb(29 52 84 / 5%);
+}
+
+.parent-child-card-heading,
+.parent-student-detail-identity {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: .75rem;
+}
+
+.parent-child-avatar {
+    display: grid;
+    width: 2.75rem;
+    height: 2.75rem;
+    flex: 0 0 auto;
+    place-items: center;
+    border: 1px solid #dce8fb;
+    border-radius: 50%;
+    background: #edf4ff;
+    color: #2459a5;
+    font-size: .84rem;
+    font-weight: 750;
+}
+
+.parent-child-avatar.is-large {
+    width: 3.5rem;
+    height: 3.5rem;
+    font-size: 1rem;
+}
+
+.parent-child-identity {
+    min-width: 0;
+    flex: 1;
+}
+
+.parent-child-identity h3 {
+    overflow: hidden;
+    margin: 0 0 .2rem;
+    color: #173453;
+    font-size: .96rem;
+    font-weight: 750;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.parent-child-code {
+    color: #73839a;
+    font-size: .71rem;
+}
+
+.parent-child-status {
+    display: inline-flex;
+    align-items: center;
+    padding: .25rem .5rem;
+    border: 1px solid #e4eaf2;
+    border-radius: 99px;
+    background: #f5f7fa;
+    color: #56677d;
+    font-size: .66rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.parent-child-status.is-active {
+    border-color: #ccebd9;
+    background: #eef9f2;
+    color: #247248;
+}
+
+.parent-child-status.is-inactive,
+.parent-child-status.is-withdrawn {
+    border-color: #f1d8d8;
+    background: #fff3f3;
+    color: #a03e43;
+}
+
+.parent-child-status.is-graduated {
+    border-color: #d8e3f5;
+    background: #f1f5fc;
+    color: #4a6286;
+}
+
+.parent-child-facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .8rem 1rem;
+    margin: 1.05rem 0;
+}
+
+.parent-child-facts > div,
+.parent-fee-summary-list > div {
+    min-width: 0;
+}
+
+.parent-child-facts dt,
+.parent-fee-summary-list dt {
+    margin-bottom: .2rem;
+    color: #7b899c;
+    font-size: .68rem;
+    font-weight: 550;
+}
+
+.parent-child-facts dd,
+.parent-fee-summary-list dd {
+    overflow-wrap: anywhere;
+    margin: 0;
+    color: #263d5a;
+    font-size: .79rem;
+    font-weight: 650;
+}
+
+.parent-child-fee {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    margin-top: .2rem;
+    padding: .65rem .75rem;
+    border-radius: 9px;
+    background: #f7f9fc;
+    color: #718096;
+    font-size: .72rem;
+}
+
+.parent-child-fee strong {
+    color: #173453;
+    font-size: .82rem;
+}
+
+.parent-child-card-footer {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: .85rem;
+    padding-top: .75rem;
+    border-top: 1px solid #edf1f6;
+}
+
+.parent-child-details-link,
+.parent-child-back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    color: #285ca5;
+    font-size: .76rem;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.parent-child-details-link:hover,
+.parent-child-back-link:hover {
+    color: #173f7d;
+}
+
+.parent-student-detail-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: .6rem;
+}
+
+.parent-registration-link {
+    display: inline-flex;
+    min-height: 36px;
+    align-items: center;
+    gap: .4rem;
+    padding: .45rem .7rem;
+    border: 1px solid #dce6f3;
+    border-radius: 8px;
+    background: #f8faff;
+    color: #285ca5;
+    font-size: .72rem;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.parent-registration-link:hover,
+.parent-registration-link:focus-visible {
+    border-color: #b8cce7;
+    background: #edf4ff;
+    color: #173f7d;
+}
+
+.parent-child-restricted {
+    color: #8793a3;
+    font-size: .7rem;
+}
+
+.parent-children-empty,
+.parent-payments-empty {
+    padding: 2.6rem 1rem;
+    text-align: center;
+}
+
+.parent-children-empty > span {
+    display: inline-grid;
+    width: 3.25rem;
+    height: 3.25rem;
+    place-items: center;
+    margin-bottom: .8rem;
+    border-radius: 50%;
+    background: #edf4ff;
+    color: #3265b5;
+    font-size: 1.3rem;
+}
+
+.parent-children-empty h3 {
+    margin: 0 0 .35rem;
+    color: #193653;
+    font-size: 1rem;
+    font-weight: 750;
+}
+
+.parent-children-empty p,
+.parent-payments-empty {
+    max-width: 520px;
+    margin: 0 auto;
+    color: #75849a;
+    font-size: .8rem;
+    line-height: 1.65;
+}
+
+.parent-student-detail {
+    margin-top: .15rem;
+}
+
+.parent-student-detail-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #edf1f6;
+}
+
+.parent-student-detail-identity h2 {
+    margin: .22rem 0 .42rem;
+    color: #153255;
+    font-size: 1.22rem;
+    font-weight: 750;
+}
+
+.parent-student-info-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+    padding: 1rem 0;
+}
+
+.parent-student-info-card {
+    min-width: 0;
+    padding: 1rem;
+    border: 1px solid #edf1f6;
+    border-radius: 12px;
+    background: #fff;
+}
+
+.parent-student-info-card h3 {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+    margin: 0 0 1rem;
+    color: #193653;
+    font-size: .88rem;
+    font-weight: 750;
+}
+
+.parent-student-info-card h3 > i {
+    color: #3568b1;
+}
+
+.parent-fee-note {
+    margin-left: auto;
+    color: #8390a2;
+    font-size: .65rem;
+    font-weight: 600;
+}
+
+.parent-fee-summary-list {
+    display: grid;
+    gap: .75rem;
+    margin: 0;
+}
+
+.parent-fee-summary-list > div {
+    display: flex;
+    justify-content: space-between;
+    gap: .75rem;
+    padding-bottom: .65rem;
+    border-bottom: 1px solid #eff2f6;
+}
+
+.parent-fee-summary-list > div:last-child {
+    padding: 0;
+    border: 0;
+}
+
+.parent-fee-summary-list dt {
+    margin: 0;
+}
+
+.parent-fee-summary-list dd {
+    text-align: right;
+}
+
+.parent-fee-summary-list .is-outstanding dd {
+    color: #a05d0a;
+}
+
+.parent-fee-footnote {
+    margin: .8rem 0 0;
+    color: #8995a5;
+    font-size: .68rem;
+    line-height: 1.5;
+}
+
+.parent-payments-panel {
+    padding-top: .9rem;
+    border-top: 1px solid #edf1f6;
+}
+
+.parent-payments-heading {
+    margin-bottom: .65rem;
+}
+
+.parent-payments-heading > a {
+    color: #285ca5;
+    font-size: .74rem;
+    font-weight: 700;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.parent-payments-table {
+    margin: 0;
+    font-size: .76rem;
+}
+
+.parent-payments-table th {
+    padding: .65rem .6rem;
+    border-bottom-color: #e8edf4;
+    color: #718096;
+    font-size: .66rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.parent-payments-table td {
+    padding: .7rem .6rem;
+    border-bottom-color: #eff2f6;
+    color: #334964;
+}
+
+.parent-announcements-list {
+    display: grid;
+    gap: .8rem;
+}
+
+.parent-announcements-list article {
+    padding: .9rem;
+    border: 1px solid #edf1f6;
+    border-radius: 12px;
+    background: #fff;
+}
+
+.parent-announcements-list article time,
+.parent-notification-meta {
+    color: #7b899c;
+    font-size: .7rem;
+}
+
+.parent-announcements-list article h3 {
+    margin: .4rem 0;
+    color: #193653;
+    font-size: .9rem;
+    font-weight: 750;
+}
+
+.parent-announcements-list article p {
+    margin: 0;
+    color: #526783;
+    font-size: .78rem;
+    line-height: 1.6;
+}
+
+.parent-notification.is-unread {
+    border-left: 3px solid #3568b1;
+    background: #f8fbff;
+}
+
+.parent-profile-form {
+    padding-top: .5rem;
+}
+
+.parent-profile-field {
+    min-width: 0;
+}
+
+.parent-account-resend,
+.parent-account-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .7rem;
+    margin-top: 1.2rem;
+    padding-top: 1rem;
+    border-top: 1px solid #edf1f6;
+}
+
+.parent-account-resend p {
+    flex-basis: 100%;
+    margin: 0;
+    color: #718096;
+    font-size: .78rem;
+}
+
+.parent-account-actions form {
+    margin: 0;
+}
+
+.parent-help-list {
+    display: grid;
+    gap: .8rem;
+    margin: 0;
+}
+
+.parent-help-list > div {
+    padding-bottom: .7rem;
+    border-bottom: 1px solid #edf1f6;
+}
+
+.parent-help-list > div:last-child {
+    padding-bottom: 0;
+    border: 0;
+}
+
+.parent-help-list dt {
+    color: #193653;
+    font-size: .8rem;
+    font-weight: 700;
+}
+
+.parent-help-list dd {
+    margin: .2rem 0 0;
+    color: #718096;
+    font-size: .75rem;
+}
+
+@media (max-width: 767.98px) {
+    .parent-children-summary {
+        grid-template-columns: 1fr;
+        gap: .65rem;
+    }
+
+    .parent-children-summary-card {
+        padding: .8rem .9rem;
+    }
+
+    .parent-children-panel {
+        padding: .9rem;
+    }
+
+    .parent-children-grid,
+    .parent-student-info-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .parent-student-detail-heading {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .parent-student-detail-actions {
+        justify-content: flex-start;
+    }
+}
+
+@media (max-width: 420px) {
+    .parent-child-card-heading {
+        align-items: flex-start;
+        flex-wrap: wrap;
+    }
+
+    .parent-child-status {
+        margin-left: 3.5rem;
+    }
+
+    .parent-child-facts {
+        gap: .7rem;
+    }
+
+    .parent-payments-heading {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}
