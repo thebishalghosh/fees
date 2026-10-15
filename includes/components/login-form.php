@@ -29,6 +29,29 @@ function render_login_form(
         return;
     }
 
+    if ($type === 'admin') {
+        $identifier = is_string($values['identifier'] ?? null) ? $values['identifier'] : '';
+        ?>
+        <form method="post" action="<?php echo e($action); ?>" novalidate>
+            <?php echo csrf_field(); ?>
+            <div class="mb-3">
+                <label class="form-label" for="<?php echo e($idPrefix); ?>-identifier">Username or Email</label>
+                <input class="form-control" id="<?php echo e($idPrefix); ?>-identifier"
+                    name="identifier" type="text" required maxlength="255"
+                    autocomplete="username" value="<?php echo e($identifier); ?>">
+            </div>
+            <div class="mb-4">
+                <label class="form-label" for="<?php echo e($idPrefix); ?>-password">Password</label>
+                <input class="form-control" id="<?php echo e($idPrefix); ?>-password"
+                    name="password" type="password" required maxlength="1024"
+                    autocomplete="current-password">
+            </div>
+            <button class="btn btn-cobalt w-100" type="submit">Login</button>
+        </form>
+        <?php
+        return;
+    }
+
     if ($type !== 'staff') {
         throw new InvalidArgumentException('The requested login form is not supported.');
     }

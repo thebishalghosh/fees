@@ -750,6 +750,37 @@ function admin_panel_get_announcement_batches(mysqli $db, int $institutionId): a
     return admin_panel_simple_list($db, $institutionId, 'batches');
 }
 
+function admin_panel_announcement(mysqli $db, int $institutionId, int $announcementId): ?array
+{
+    $statement = $db->prepare(
+        'SELECT id, title, message, status, publish_at, expires_at
+         FROM announcements
+         WHERE institution_id = ? AND id = ?
+         LIMIT 1'
+    );
+    $statement->bind_param('ii', $institutionId, $announcementId);
+    $statement->execute();
+    $announcement = $statement->get_result()->fetch_assoc();
+    $statement->close();
+    if (!is_array($announcement)) {
+        return null;
+    }
+
+    $statement = $db->prepare(
+        'SELECT batch_id FROM announcement_batches
+         WHERE institution_id = ? AND announcement_id = ?
+         ORDER BY batch_id'
+    );
+    $statement->bind_param('ii', $institutionId, $announcementId);
+    $statement->execute();
+    $announcement['batch_ids'] = array_map(
+        'intval',
+        array_column($statement->get_result()->fetch_all(MYSQLI_ASSOC), 'batch_id')
+    );
+    $statement->close();
+    return $announcement;
+}
+
 function admin_panel_save_announcement(
     mysqli $db,
     int $institutionId,
@@ -759,8 +790,12 @@ function admin_panel_save_announcement(
     string $status,
     ?string $publishAt,
     ?string $expiresAt,
-    array $batchIds
+    array $batchIds,
+    ?int $announcementId = null
 ): int {
+    if ($announcementId !== null && $announcementId < 1) {
+        throw new InvalidArgumentException('The announcement ID is invalid.');
+    }
     $title = trim($title);
     $message = trim($message);
     if ($title === '' || mb_strlen($title, 'UTF-8') > 220
@@ -804,26 +839,62 @@ function admin_panel_save_announcement(
         }
     }
 
+    $isNewAnnouncement = $announcementId === null;
+    $beforeAnnouncement = null;
+    if ($announcementId !== null) {
+        $beforeAnnouncement = admin_panel_announcement($db, $institutionId, $announcementId);
+        if ($beforeAnnouncement === null) {
+            throw new OutOfBoundsException('Announcement not found.');
+        }
+    }
+
     $db->begin_transaction();
     try {
-        $statement = $db->prepare(
-            'INSERT INTO announcements
-                (institution_id, created_by, title, message, publish_at, expires_at, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?)'
-        );
-        $statement->bind_param(
-            'iisssss',
-            $institutionId,
-            $actorUserId,
-            $title,
-            $message,
-            $publishDateTime,
-            $expiryDateTime,
-            $status
-        );
-        $statement->execute();
-        $announcementId = (int) $statement->insert_id;
-        $statement->close();
+        if ($announcementId === null) {
+            $statement = $db->prepare(
+                'INSERT INTO announcements
+                    (institution_id, created_by, title, message, publish_at, expires_at, status)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)'
+            );
+            $statement->bind_param(
+                'iisssss',
+                $institutionId,
+                $actorUserId,
+                $title,
+                $message,
+                $publishDateTime,
+                $expiryDateTime,
+                $status
+            );
+            $statement->execute();
+            $announcementId = (int) $statement->insert_id;
+            $statement->close();
+        } else {
+            $statement = $db->prepare(
+                'UPDATE announcements
+                 SET title = ?, message = ?, publish_at = ?, expires_at = ?, status = ?
+                 WHERE institution_id = ? AND id = ?'
+            );
+            $statement->bind_param(
+                'sssssii',
+                $title,
+                $message,
+                $publishDateTime,
+                $expiryDateTime,
+                $status,
+                $institutionId,
+                $announcementId
+            );
+            $statement->execute();
+            $statement->close();
+            $statement = $db->prepare(
+                'DELETE FROM announcement_batches
+                 WHERE institution_id = ? AND announcement_id = ?'
+            );
+            $statement->bind_param('ii', $institutionId, $announcementId);
+            $statement->execute();
+            $statement->close();
+        }
 
         if ($batchIds !== []) {
             $statement = $db->prepare(
@@ -836,15 +907,21 @@ function admin_panel_save_announcement(
             }
             $statement->close();
         }
+        $actor = current_user();
         write_audit_log(
             $db,
             $institutionId,
             $actorUserId,
-            'admin',
-            'announcement.created',
+            is_array($actor) ? (string) $actor['user_type'] : 'admin',
+            $isNewAnnouncement ? 'announcement.created' : 'announcement.updated',
             'announcement',
             (string) $announcementId,
-            null,
+            $beforeAnnouncement === null
+                ? null
+                : [
+                    'status' => $beforeAnnouncement['status'],
+                    'target_batch_count' => count($beforeAnnouncement['batch_ids']),
+                ],
             ['status' => $status, 'target_batch_count' => count($batchIds)]
         );
         $db->commit();
@@ -858,14 +935,14 @@ function admin_panel_save_announcement(
 function admin_panel_notifications(mysqli $db, int $institutionId): array
 {
     $statement = $db->prepare(
-        'SELECT n.id, n.notification_type, n.title, n.channel, n.status, n.scheduled_at,
+        "SELECT n.id, n.notification_type, n.title, n.channel, n.status, n.scheduled_at,
                 n.sent_at, n.created_at, u.full_name AS recipient_name,
                 u.email AS recipient_email, s.full_name AS student_name, s.student_code
          FROM notifications n
          JOIN users u ON u.institution_id = n.institution_id AND u.id = n.recipient_user_id
          LEFT JOIN students s ON s.institution_id = n.institution_id AND s.id = n.student_id
-         WHERE n.institution_id = ?
-         ORDER BY n.created_at DESC, n.id DESC LIMIT 200'
+         WHERE n.institution_id = ? AND n.channel = 'portal'
+         ORDER BY n.created_at DESC, n.id DESC LIMIT 200"
     );
     $statement->bind_param('i', $institutionId);
     $statement->execute();

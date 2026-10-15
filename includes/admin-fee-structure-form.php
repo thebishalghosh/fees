@@ -56,30 +56,121 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' && $structure !== null) {
     }
 }
 $title = $adminFeeStructureId === null ? 'Create Fee Structure' : 'Edit Fee Structure';
-render_app_page_start($title, 'Fee totals are calculated from the selected category amounts. Structures already assigned to students are locked to preserve fee history.', 'admin', ['admin-dashboard.css']);
+render_app_page_start($title, 'Fee totals are calculated from the selected category amounts. Structures already assigned to students are locked to preserve fee history.', 'admin', ['admin-dashboard.css', 'admin-fee-structure-form.css']);
 ?>
 <?php echo render_flash_messages(); ?>
-<nav aria-label="Breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="<?php echo e(route_url('/admin/dashboard')); ?>">Dashboard</a></li><li class="breadcrumb-item"><a href="<?php echo e(route_url('/admin/fees/structures')); ?>">Fee Structures</a></li><li class="breadcrumb-item active" aria-current="page"><?php echo e($title); ?></li></ol></nav>
-<?php foreach ($errors as $error): ?><div class="alert alert-danger" role="alert"><?php echo e($error); ?></div><?php endforeach; ?>
-<section class="dashboard-panel admin-form-panel">
-    <form method="post" action="<?php echo e(route_url($adminFeeStructureId === null ? '/admin/fees/create-structure' : '/admin/fees/edit-structure') . ($adminFeeStructureId === null ? '' : '?id=' . $adminFeeStructureId)); ?>" class="admin-form-grid">
+<nav class="fee-structure-breadcrumb" aria-label="Breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="<?php echo e(route_url('/admin/dashboard')); ?>">Dashboard</a></li>
+        <li class="breadcrumb-item"><a href="<?php echo e(route_url('/admin/fees/structures')); ?>">Fee Structures</a></li>
+        <li class="breadcrumb-item active" aria-current="page"><?php echo e($title); ?></li>
+    </ol>
+</nav>
+<?php foreach ($errors as $error): ?>
+    <div class="alert alert-danger fee-structure-alert" role="alert">
+        <i class="bi bi-exclamation-circle" aria-hidden="true"></i><?php echo e($error); ?>
+    </div>
+<?php endforeach; ?>
+<section class="fee-structure-card" aria-labelledby="fee-structure-card-title">
+    <header class="fee-structure-card-header">
+        <span class="fee-structure-card-icon"><i class="bi bi-receipt" aria-hidden="true"></i></span>
+        <div>
+            <span class="fee-structure-eyebrow">Fee configuration</span>
+            <h2 id="fee-structure-card-title"><?php echo e($title); ?></h2>
+            <p>Set the scope and status, then choose the categories and amounts that make up this structure.</p>
+        </div>
+    </header>
+    <form method="post" action="<?php echo e(route_url($adminFeeStructureId === null ? '/admin/fees/create-structure' : '/admin/fees/edit-structure') . ($adminFeeStructureId === null ? '' : '?id=' . $adminFeeStructureId)); ?>" class="fee-structure-form">
         <?php echo csrf_field(); ?>
-        <label class="admin-form-field">Structure name<input class="form-control" name="name" maxlength="150" required value="<?php echo e($formValues['name']); ?>"></label>
-        <label class="admin-form-field">Academic year<select class="form-select" name="academic_year_id" required><option value="">Select academic year</option><?php foreach ($years as $year): ?><option value="<?php echo e((string) $year['id']); ?>"<?php echo $formValues['academic_year_id'] === (string) $year['id'] ? ' selected' : ''; ?>><?php echo e((string) $year['name']); ?></option><?php endforeach; ?></select></label>
-        <label class="admin-form-field">Course (optional)<select class="form-select" name="course_id"><option value="">All courses</option><?php foreach ($courses as $course): ?><option value="<?php echo e((string) $course['id']); ?>"<?php echo $formValues['course_id'] === (string) $course['id'] ? ' selected' : ''; ?>><?php echo e((string) $course['name']); ?></option><?php endforeach; ?></select></label>
-        <label class="admin-form-field">Class (optional)<select class="form-select" name="class_id"><option value="">All classes</option><?php foreach ($classes as $class): ?><option value="<?php echo e((string) $class['id']); ?>"<?php echo $formValues['class_id'] === (string) $class['id'] ? ' selected' : ''; ?>><?php echo e((string) $class['name']); ?></option><?php endforeach; ?></select></label>
-        <label class="admin-form-field">Status<select class="form-select" name="status"><?php foreach (['draft', 'active', 'inactive'] as $status): ?><option value="<?php echo e($status); ?>"<?php echo $formValues['status'] === $status ? ' selected' : ''; ?>><?php echo e(ucfirst($status)); ?></option><?php endforeach; ?></select></label>
-        <label class="admin-form-field is-wide">Description<textarea class="form-control" name="description" rows="4" maxlength="20000"><?php echo e($formValues['description']); ?></textarea></label>
-        <fieldset class="admin-form-field is-wide"><legend>Fee items</legend>
-            <?php if ($categories === []): ?><p class="text-muted">Create fee categories before configuring a structure.</p><?php else: ?>
-                <div class="table-responsive"><table class="table"><thead><tr><th>Include</th><th>Category</th><th>Amount</th></tr></thead><tbody>
-                    <?php foreach ($categories as $category): $categoryId = (string) $category['id']; $checked = in_array($categoryId, $selectedCategoryValues, true); $disabled = $category['status'] !== 'active' && !$checked; ?>
-                        <tr><td><input type="checkbox" name="category_ids[]" value="<?php echo e($categoryId); ?>"<?php echo $checked ? ' checked' : ''; ?><?php echo $disabled ? ' disabled' : ''; ?> aria-label="<?php echo e('Include ' . $category['name']); ?>"></td><td><?php echo e((string) $category['name']); ?><?php if ($category['status'] !== 'active'): ?> <span class="text-muted">(inactive; existing structures only)</span><?php endif; ?></td><td><input class="form-control" type="number" name="items[<?php echo e($categoryId); ?>]" min="0.01" max="9999999999.99" step="0.01" value="<?php echo e(is_string($amountValues[$categoryId] ?? null) ? $amountValues[$categoryId] : ''); ?>" aria-label="<?php echo e($category['name'] . ' amount'); ?>"></td></tr>
-                    <?php endforeach; ?>
-                </tbody></table></div>
+        <div class="fee-structure-section-heading">
+            <span>01</span>
+            <div><h3>Structure details</h3><p>Choose when and where this fee structure applies.</p></div>
+        </div>
+        <label class="fee-structure-field">
+            <span>Structure name <b aria-hidden="true">*</b></span>
+            <input class="form-control" name="name" maxlength="150" required placeholder="e.g. Annual tuition fees" value="<?php echo e($formValues['name']); ?>">
+        </label>
+        <label class="fee-structure-field">
+            <span>Academic year <b aria-hidden="true">*</b></span>
+            <select class="form-select" name="academic_year_id" required>
+                <option value="">Select academic year</option>
+                <?php foreach ($years as $year): ?>
+                    <option value="<?php echo e((string) $year['id']); ?>"<?php echo $formValues['academic_year_id'] === (string) $year['id'] ? ' selected' : ''; ?>><?php echo e((string) $year['name']); ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
+        <label class="fee-structure-field">
+            <span>Course <small>Optional</small></span>
+            <select class="form-select" name="course_id">
+                <option value="">All courses</option>
+                <?php foreach ($courses as $course): ?>
+                    <option value="<?php echo e((string) $course['id']); ?>"<?php echo $formValues['course_id'] === (string) $course['id'] ? ' selected' : ''; ?>><?php echo e((string) $course['name']); ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
+        <label class="fee-structure-field">
+            <span>Class <small>Optional</small></span>
+            <select class="form-select" name="class_id">
+                <option value="">All classes</option>
+                <?php foreach ($classes as $class): ?>
+                    <option value="<?php echo e((string) $class['id']); ?>"<?php echo $formValues['class_id'] === (string) $class['id'] ? ' selected' : ''; ?>><?php echo e((string) $class['name']); ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
+        <label class="fee-structure-field">
+            <span>Status</span>
+            <select class="form-select" name="status">
+                <?php foreach (['draft', 'active', 'inactive'] as $status): ?>
+                    <option value="<?php echo e($status); ?>"<?php echo $formValues['status'] === $status ? ' selected' : ''; ?>><?php echo e(ucfirst($status)); ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
+        <label class="fee-structure-field fee-structure-field-wide">
+            <span>Description <small>Optional</small></span>
+            <textarea class="form-control" name="description" rows="3" maxlength="20000" placeholder="Add context for staff and families about this fee structure"><?php echo e($formValues['description']); ?></textarea>
+        </label>
+        <fieldset class="fee-structure-items">
+            <legend><span>02</span><span>Fee items</span></legend>
+            <p class="fee-structure-items-help">Select the categories to include and enter the amount for each. The total is calculated from these amounts.</p>
+            <?php if ($categories === []): ?>
+                <div class="fee-structure-empty">
+                    <i class="bi bi-tags" aria-hidden="true"></i>
+                    <strong>No fee categories available</strong>
+                    <span>Create a fee category first, then return to configure this structure.</span>
+                    <a href="<?php echo e(route_url('/admin/fees/categories')); ?>">Go to fee categories <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+                </div>
+            <?php else: ?>
+                <div class="table-responsive fee-structure-table-wrap">
+                    <table class="table fee-structure-table">
+                        <thead><tr><th scope="col">Include</th><th scope="col">Category</th><th scope="col">Amount</th></tr></thead>
+                        <tbody>
+                            <?php foreach ($categories as $category): ?>
+                                <?php $categoryId = (string) $category['id']; $checked = in_array($categoryId, $selectedCategoryValues, true); $disabled = $category['status'] !== 'active' && !$checked; ?>
+                                <tr>
+                                    <td>
+                                        <input class="fee-structure-checkbox" type="checkbox" name="category_ids[]" value="<?php echo e($categoryId); ?>"<?php echo $checked ? ' checked' : ''; ?><?php echo $disabled ? ' disabled' : ''; ?> aria-label="<?php echo e('Include ' . $category['name']); ?>">
+                                    </td>
+                                    <td>
+                                        <span class="fee-structure-category-name"><?php echo e((string) $category['name']); ?></span>
+                                        <?php if ($category['status'] !== 'active'): ?><span class="fee-structure-category-inactive">Inactive · existing structures only</span><?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <div class="fee-structure-amount">
+                                            <span aria-hidden="true">₹</span>
+                                            <input class="form-control" type="number" name="items[<?php echo e($categoryId); ?>]" min="0.01" max="9999999999.99" step="0.01" value="<?php echo e(is_string($amountValues[$categoryId] ?? null) ? $amountValues[$categoryId] : ''); ?>" aria-label="<?php echo e($category['name'] . ' amount'); ?>">
+                                        </div>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
             <?php endif; ?>
         </fieldset>
-        <div class="admin-form-actions"><button class="btn btn-cobalt" type="submit"><?php echo e($adminFeeStructureId === null ? 'Create fee structure' : 'Save fee structure'); ?></button><a class="btn btn-outline-secondary" href="<?php echo e(route_url('/admin/fees/structures')); ?>">Cancel</a></div>
+        <footer class="fee-structure-form-footer">
+            <a class="fee-structure-cancel" href="<?php echo e(route_url('/admin/fees/structures')); ?>"><i class="bi bi-arrow-left" aria-hidden="true"></i>Cancel</a>
+            <button class="btn btn-cobalt fee-structure-submit" type="submit"><i class="bi bi-check2" aria-hidden="true"></i><?php echo e($adminFeeStructureId === null ? 'Create fee structure' : 'Save changes'); ?></button>
+        </footer>
     </form>
 </section>
 <?php render_app_page_end('admin'); ?>

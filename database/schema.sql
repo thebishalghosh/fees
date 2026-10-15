@@ -814,13 +814,14 @@ CREATE TABLE IF NOT EXISTS notifications (
     institution_id BIGINT UNSIGNED NOT NULL,
     recipient_user_id BIGINT UNSIGNED NOT NULL,
     student_id BIGINT UNSIGNED NULL,
-    notification_type ENUM('fee_reminder','payment_success','payment_failed','class_update','exam_reminder','announcement','admission_update','system','other') NOT NULL DEFAULT 'other',
+    notification_type ENUM('fee_reminder','payment_success','payment_failed','payment_pending','class_update','exam_reminder','holiday_update','announcement','admission_update','refund_update','system','other') NOT NULL DEFAULT 'other',
     title VARCHAR(220) NOT NULL,
     message TEXT NOT NULL,
     channel ENUM('portal','sms','email','whatsapp') NOT NULL DEFAULT 'portal',
     status ENUM('queued','sent','delivered','read','failed') NOT NULL DEFAULT 'queued',
     related_entity_type VARCHAR(80) NULL,
     related_entity_id BIGINT UNSIGNED NULL,
+    dedupe_key VARCHAR(191) NULL,
     scheduled_at DATETIME NULL,
     sent_at DATETIME NULL,
     delivered_at DATETIME NULL,
@@ -828,6 +829,7 @@ CREATE TABLE IF NOT EXISTS notifications (
     failure_reason VARCHAR(500) NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
+    UNIQUE KEY uq_notifications_recipient_dedupe (institution_id, recipient_user_id, dedupe_key),
     KEY idx_notifications_recipient_status (recipient_user_id, status, created_at),
     KEY idx_notifications_schedule (status, scheduled_at),
     KEY idx_notifications_student (student_id, created_at),
@@ -835,6 +837,21 @@ CREATE TABLE IF NOT EXISTS notifications (
     CONSTRAINT fk_notifications_recipient FOREIGN KEY (institution_id, recipient_user_id) REFERENCES users(institution_id, id) ON DELETE RESTRICT,
     CONSTRAINT fk_notifications_student FOREIGN KEY (institution_id, student_id) REFERENCES students(institution_id, id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS notification_generation_cursors (
+    cursor_key VARCHAR(80) NOT NULL,
+    last_processed_at DATETIME NOT NULL,
+    PRIMARY KEY (cursor_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO notification_generation_cursors (cursor_key, last_processed_at) VALUES
+    ('payment_events', CURRENT_TIMESTAMP),
+    ('payment_attempt_events', CURRENT_TIMESTAMP),
+    ('admission_events', CURRENT_TIMESTAMP),
+    ('refund_events', CURRENT_TIMESTAMP),
+    ('timetable_events', CURRENT_TIMESTAMP),
+    ('examination_events', CURRENT_TIMESTAMP),
+    ('holiday_events', CURRENT_TIMESTAMP);
 
 CREATE TABLE IF NOT EXISTS audit_logs (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,

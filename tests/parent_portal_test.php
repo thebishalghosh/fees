@@ -86,6 +86,7 @@ $invalidProfile = parent_portal_validate_profile_update([
 $check($invalidProfile['errors'] !== [], 'Reject missing required profile name and invalid alternate number');
 
 $serviceSource = file_get_contents(__DIR__ . '/../services/parent-portal-service.php');
+$notificationServiceSource = file_get_contents(__DIR__ . '/../services/notification-service.php');
 $attendanceServiceSource = file_get_contents(__DIR__ . '/../services/attendance-management-service.php');
 $childrenPage = file_get_contents(__DIR__ . '/../parent/children.php');
 $detailsPage = file_get_contents(__DIR__ . '/../parent/child-details.php');
@@ -102,6 +103,7 @@ $admissionPdfPage = file_get_contents(__DIR__ . '/../parent/admissions/download-
 $parentAuth = file_get_contents(__DIR__ . '/../includes/auth.php');
 $schema = file_get_contents(__DIR__ . '/../database/schema.sql');
 $readable = is_string($serviceSource)
+    && is_string($notificationServiceSource)
     && is_string($attendanceServiceSource)
     && is_string($childrenPage)
     && is_string($detailsPage)
@@ -247,9 +249,10 @@ if ($readable) {
         'Bind payment list parameters in placeholder order and filter assignment payment history accurately'
     );
     $check(
-        str_contains($serviceSource, 'n.recipient_user_id = ?')
-            && str_contains($serviceSource, 'psr.parent_id = ?')
-            && str_contains($serviceSource, "psr.status = 'active'"),
+        str_contains($notificationServiceSource, 'n.recipient_user_id = ?')
+            && str_contains($notificationServiceSource, 'psr.parent_id = ?')
+            && str_contains($notificationServiceSource, "psr.status = 'active'")
+            && str_contains($serviceSource, 'notification_service_get_parent_notifications('),
         'Restrict notifications to the authenticated recipient and active linked students'
     );
     $check(

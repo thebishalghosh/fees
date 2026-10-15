@@ -2,16 +2,26 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../../services/institution-branding-service.php';
+require_once __DIR__ . '/../../services/notification-service.php';
 require_once __DIR__ . '/../auth.php';
 
 function render_site_header(string $context = 'public'): void
 {
     $isPublic = str_starts_with($context, 'public');
     $institutionBranding = null;
+    $notificationUnreadCount = 0;
     if (!$isPublic) {
         $user = current_user();
         if ($user !== null) {
-            $institutionBranding = institution_branding_get(db_connect(), (int) $user['institution_id']);
+            $db = db_connect();
+            $institutionBranding = institution_branding_get($db, (int) $user['institution_id']);
+            if ($context === 'parent' && $user['user_type'] === 'parent') {
+                $notificationUnreadCount = notification_service_unread_count_for_user(
+                    $db,
+                    (int) $user['institution_id'],
+                    (int) $user['id']
+                );
+            }
         }
     }
     $navItems = $isPublic
@@ -71,6 +81,14 @@ function render_site_header(string $context = 'public'): void
                             <?php endif; ?>
                             <?php echo e($institutionBranding['name']); ?>
                         </span>
+                    <?php endif; ?>
+                    <?php if ($context === 'parent' && $notificationUnreadCount > 0): ?>
+                        <a class="btn btn-outline-light btn-sm position-relative" href="<?php echo e(route_url('/parent/notifications/index')); ?>" aria-label="<?php echo e('Notifications, ' . $notificationUnreadCount . ' unread'); ?>">
+                            <i class="bi bi-bell me-1" aria-hidden="true"></i>Notifications
+                            <span class="badge rounded-pill text-bg-danger ms-1"><?php echo e((string) $notificationUnreadCount); ?></span>
+                        </a>
+                    <?php elseif ($context === 'parent'): ?>
+                        <a class="btn btn-outline-light btn-sm" href="<?php echo e(route_url('/parent/notifications/index')); ?>"><i class="bi bi-bell me-1" aria-hidden="true"></i>Notifications</a>
                     <?php endif; ?>
                     <span class="workspace-label"><i class="bi bi-grid-1x2-fill me-2" aria-hidden="true"></i><?php
                         $workspaceLabel = ucfirst($context) . ' workspace';

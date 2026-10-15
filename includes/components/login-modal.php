@@ -5,6 +5,7 @@ require_once __DIR__ . '/login-form.php';
 
 $loginModalState = is_array($loginModalState ?? null) ? $loginModalState : [];
 $parentLoginState = is_array($loginModalState['parent'] ?? null) ? $loginModalState['parent'] : [];
+$adminLoginState = is_array($loginModalState['admin'] ?? null) ? $loginModalState['admin'] : [];
 $staffLoginState = is_array($loginModalState['staff'] ?? null) ? $loginModalState['staff'] : [];
 $openLoginModal = isset($_GET['login']) && $_GET['login'] === '1';
 $pendingAuth = is_array($_SESSION['pending_auth'] ?? null) ? $_SESSION['pending_auth'] : [];
@@ -15,7 +16,11 @@ $activeLoginTab = isset($staffLoginState['errors'])
     && is_array($staffLoginState['errors'])
     && array_filter($staffLoginState['errors'], static fn(mixed $error): bool => is_string($error) && $error !== '') !== []
     ? 'staff'
-    : ($requestedTab === 'staff' || ($pendingAuth['login_type'] ?? null) === 'staff_email' ? 'staff' : 'parent');
+    : ($requestedTab === 'admin'
+        ? 'admin'
+        : ($requestedTab === 'staff' || ($pendingAuth['login_type'] ?? null) === 'staff_email'
+            ? 'staff'
+            : 'parent'));
 $loginFlash = $isOtpVerification ? '' : render_flash_messages($activeLoginTab . '_auth');
 ?>
 <div class="modal fade login-modal" id="login-modal" tabindex="-1"
@@ -40,9 +45,14 @@ $loginFlash = $isOtpVerification ? '' : render_flash_messages($activeLoginTab . 
                             aria-controls="parent-login-panel" aria-selected="<?php echo $activeLoginTab === 'parent' ? 'true' : 'false'; ?>">Parent</button>
                     </li>
                     <li class="nav-item" role="presentation">
+                        <button class="nav-link<?php echo $activeLoginTab === 'admin' ? ' active' : ''; ?>" id="admin-login-tab" data-bs-toggle="tab"
+                            data-bs-target="#admin-login-panel" type="button" role="tab"
+                            aria-controls="admin-login-panel" aria-selected="<?php echo $activeLoginTab === 'admin' ? 'true' : 'false'; ?>">Admin</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
                         <button class="nav-link<?php echo $activeLoginTab === 'staff' ? ' active' : ''; ?>" id="staff-login-tab" data-bs-toggle="tab"
                             data-bs-target="#staff-login-panel" type="button" role="tab"
-                            aria-controls="staff-login-panel" aria-selected="<?php echo $activeLoginTab === 'staff' ? 'true' : 'false'; ?>">Staff / Admin</button>
+                            aria-controls="staff-login-panel" aria-selected="<?php echo $activeLoginTab === 'staff' ? 'true' : 'false'; ?>">Staff</button>
                     </li>
                 </ul>
                 <div class="tab-content">
@@ -55,6 +65,17 @@ $loginFlash = $isOtpVerification ? '' : render_flash_messages($activeLoginTab . 
                             'modal-parent',
                             $parentLoginState['values'] ?? [],
                             $parentLoginState['errors'] ?? []
+                        ); ?>
+                    </section>
+                    <section class="tab-pane fade<?php echo $activeLoginTab === 'admin' ? ' show active' : ''; ?>" id="admin-login-panel" role="tabpanel"
+                        aria-labelledby="admin-login-tab" tabindex="0">
+                        <p class="login-modal-help">Sign in with your administrator username or email and password.</p>
+                        <?php render_login_form(
+                            'admin',
+                            route_url('/login/admin'),
+                            'modal-admin',
+                            $adminLoginState['values'] ?? [],
+                            $adminLoginState['errors'] ?? []
                         ); ?>
                     </section>
                     <section class="tab-pane fade<?php echo $activeLoginTab === 'staff' ? ' show active' : ''; ?>" id="staff-login-panel" role="tabpanel"

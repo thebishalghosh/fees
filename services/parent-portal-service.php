@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/notification-service.php';
 require_once __DIR__ . '/otp-service.php';
 require_once __DIR__ . '/audit-service.php';
 
@@ -798,30 +799,14 @@ function parent_portal_get_announcements(mysqli $db, int $parentId, int $institu
 
 function parent_portal_get_notifications(mysqli $db, int $parentId, int $institutionId, int $userId): array
 {
-    $statement = $db->prepare(
-        "SELECT n.id, n.notification_type, n.title, n.message, n.status, n.created_at,
-                n.read_at, n.student_id, s.full_name AS student_name
-         FROM notifications n
-         LEFT JOIN students s
-           ON s.institution_id = n.institution_id AND s.id = n.student_id
-         WHERE n.institution_id = ? AND n.recipient_user_id = ?
-           AND (n.student_id IS NULL OR EXISTS (
-               SELECT 1 FROM parent_student_relationships psr
-               WHERE psr.institution_id = n.institution_id
-                 AND psr.student_id = n.student_id AND psr.parent_id = ?
-                 AND psr.status = 'active'
-           ))
-         ORDER BY n.created_at DESC, n.id DESC LIMIT 100"
-    );
-    $statement->bind_param('iii', $institutionId, $userId, $parentId);
-    $statement->execute();
-    $result = $statement->get_result();
-    $notifications = [];
-    while ($row = $result->fetch_assoc()) {
-        $notifications[] = $row;
-    }
-    $statement->close();
-    return $notifications;
+    return notification_service_get_parent_notifications(
+        $db,
+        $parentId,
+        $institutionId,
+        $userId,
+        1,
+        100
+    )['items'];
 }
 
 function parent_portal_get_profile(mysqli $db, int $parentId, int $institutionId, int $userId): ?array
