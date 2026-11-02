@@ -38,8 +38,12 @@ function payment_calculate_installment_balance_paise(
     return max(0, min($installmentBalance, payment_money_to_paise($assignmentOutstanding)));
 }
 
-function payment_razorpay_credentials_are_valid(array $config, string $environment, bool $curlAvailable): bool
-{
+function payment_razorpay_credentials_are_valid(
+    array $config,
+    string $environment,
+    bool $curlAvailable,
+    bool $allowTestKeysInProduction = false
+): bool {
     $keyId = $config['razorpay_key_id'] ?? null;
     $keySecret = $config['razorpay_key_secret'] ?? null;
     if (!$curlAvailable || !is_string($keyId) || !is_string($keySecret)
@@ -50,6 +54,7 @@ function payment_razorpay_credentials_are_valid(array $config, string $environme
 
     return $environment === 'production'
         ? str_starts_with($keyId, 'rzp_live_')
+            || ($allowTestKeysInProduction && str_starts_with($keyId, 'rzp_test_'))
         : in_array($environment, ['development', 'testing'], true) && str_starts_with($keyId, 'rzp_test_');
 }
 
@@ -58,7 +63,8 @@ function payment_razorpay_is_ready(): bool
     return payment_razorpay_credentials_are_valid(
         app_config()['payments'],
         (string) app_config()['env'],
-        function_exists('curl_init')
+        function_exists('curl_init'),
+        app_config()['payments']['allow_test_keys_in_production']
     );
 }
 
@@ -68,7 +74,8 @@ function payment_require_razorpay_ready(): array
     if (!payment_razorpay_credentials_are_valid(
         $config,
         (string) app_config()['env'],
-        function_exists('curl_init')
+        function_exists('curl_init'),
+        app_config()['payments']['allow_test_keys_in_production']
     )) {
         throw new RuntimeException('Valid Razorpay API credentials and the PHP cURL extension are required.');
     }

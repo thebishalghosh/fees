@@ -15,6 +15,15 @@ and admission PDFs. PHP needs the `fileinfo` and `gd` extensions to validate upl
 
 The application requires PHP 8.x with the `dom` and `mbstring` extensions enabled.
 
+## Razorpay server configuration
+
+Production uses Razorpay live keys by default. To run sandbox transactions from a
+production-hosted site, set `RAZORPAY_ALLOW_TEST_KEYS_IN_PRODUCTION=true` in the
+server environment and configure matching Razorpay test API credentials. This
+only enables sandbox/test-key mode; payments are not live transactions. Keep the
+setting false or unset for live payments, and use the matching test webhook
+secret if webhooks are configured.
+
 Run the focused checks with:
 
 ```text

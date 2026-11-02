@@ -20,8 +20,8 @@ function db_config(): array
     );
     $database = (string) ($combined['DB_NAME'] ?? 'fees_management_test');
 
-    if ($database !== 'fees_management_test') {
-        throw new RuntimeException('Database access is restricted to the approved disposable test database.');
+    if ($database === '') {
+        throw new RuntimeException('DB_NAME must be configured with a database name.');
     }
 
     $config = [

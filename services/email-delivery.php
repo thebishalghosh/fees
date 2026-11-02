@@ -31,19 +31,18 @@ function mailpit_runtime_configuration_status(): array
     return $status;
 }
 
-function log_mailpit_delivery_failure(string $reason, ?Throwable $exception = null, string $recipient = ''): void
+function log_email_delivery_failure(string $reason, ?Throwable $exception = null, string $recipient = ''): void
 {
     $config = app_config();
-    if ($config['env'] !== 'development') {
-        return;
-    }
-
     $mail = $config['mail'];
     $entry = [
-        'event' => 'mailpit_delivery_failed',
+        'event' => 'email_delivery_failed',
         'reason' => $reason,
     ];
 
+    $entry['provider'] = in_array($mail['provider'], ['mailpit', 'smtp'], true)
+        ? $mail['provider']
+        : 'invalid';
     $entry['host'] = preg_match('/^[A-Za-z0-9.-]{1,253}$/D', $mail['host']) === 1 ? $mail['host'] : 'invalid';
     $entry['port'] = $mail['port'];
     $entry['encryption'] = in_array($mail['encryption'], ['none', 'tls', 'ssl'], true)
@@ -72,14 +71,20 @@ function otp_email_delivery_available(): bool
 {
     $config = app_config();
     $mail = $config['mail'];
+    $providerAllowed = ($config['env'] === 'development' && $mail['provider'] === 'mailpit')
+        || ($config['env'] === 'production' && $mail['provider'] === 'smtp');
 
-    return $config['env'] === 'development'
-        && $mail['provider'] === 'mailpit'
+    return $providerAllowed
         && $mail['host'] !== ''
         && preg_match('/^[A-Za-z0-9.-]+$/D', $mail['host']) === 1
         && $mail['port'] >= 1
         && $mail['port'] <= 65535
-        && filter_var($mail['from_address'], FILTER_VALIDATE_EMAIL) !== false;
+        && in_array($mail['encryption'], ['none', 'tls', 'ssl'], true)
+        && filter_var($mail['from_address'], FILTER_VALIDATE_EMAIL) !== false
+        && trim($mail['from_name']) !== ''
+        && preg_match('/[\r\n]/', $mail['from_name']) !== 1
+        && $mail['timeout_seconds'] >= 1
+        && (($mail['username'] === '') === ($mail['password'] === ''));
 }
 
 function send_otp_email(
@@ -109,35 +114,24 @@ function send_otp_email(
 
     $config = app_config();
     $mail = $config['mail'];
-    if ($config['env'] !== 'development' || $mail['provider'] !== 'mailpit') {
+    if (!otp_email_delivery_available()) {
         if ($correlationId === null) {
-            log_mailpit_delivery_failure('delivery_failed', null, $recipient);
+            log_email_delivery_failure('delivery_failed', null, $recipient);
         }
         throw new OtpEmailDeliveryException('No email provider is configured for this environment.');
-    }
-    if (!otp_email_delivery_available()
-        || !in_array($mail['encryption'], ['none', 'tls', 'ssl'], true)
-        || $mail['timeout_seconds'] < 1
-        || trim($mail['from_name']) === ''
-        || preg_match('/[\r\n]/', $mail['from_name']) === 1
-        || (($mail['username'] === '') !== ($mail['password'] === ''))) {
-        if ($correlationId === null) {
-            log_mailpit_delivery_failure('delivery_failed', null, $recipient);
-        }
-        throw new OtpEmailDeliveryException('Mailpit SMTP configuration is incomplete.');
     }
 
     $autoloadPath = APP_ROOT . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php';
     if (!is_file($autoloadPath)) {
         if ($correlationId === null) {
-            log_mailpit_delivery_failure('delivery_failed', null, $recipient);
+            log_email_delivery_failure('delivery_failed', null, $recipient);
         }
         throw new OtpEmailDeliveryException('The email delivery library is unavailable.');
     }
     require_once $autoloadPath;
     if (!class_exists(PHPMailer::class)) {
         if ($correlationId === null) {
-            log_mailpit_delivery_failure('delivery_failed', null, $recipient);
+            log_email_delivery_failure('delivery_failed', null, $recipient);
         }
         throw new OtpEmailDeliveryException('The email delivery library is unavailable.');
     }
@@ -171,22 +165,22 @@ function send_otp_email(
         $mailer->AltBody = $altBody ?? $body;
         if (!$mailer->send()) {
             if ($correlationId === null) {
-                log_mailpit_delivery_failure('delivery_failed', null, $recipient);
+                log_email_delivery_failure('delivery_failed', null, $recipient);
             }
-            throw new OtpEmailDeliveryException('Mailpit did not confirm email delivery.');
+            throw new OtpEmailDeliveryException('The SMTP server did not confirm email delivery.');
         }
     } catch (PHPMailerException $exception) {
         if ($correlationId === null) {
-            log_mailpit_delivery_failure('delivery_failed', $exception, $recipient);
+            log_email_delivery_failure('delivery_failed', $exception, $recipient);
         }
-        throw new OtpEmailDeliveryException('Mailpit SMTP delivery failed.', 0, $exception);
+        throw new OtpEmailDeliveryException('SMTP email delivery failed.', 0, $exception);
     } catch (OtpEmailDeliveryException $exception) {
         throw $exception;
     } catch (Throwable $exception) {
         if ($correlationId === null) {
-            log_mailpit_delivery_failure('delivery_failed', $exception, $recipient);
+            log_email_delivery_failure('delivery_failed', $exception, $recipient);
         }
-        throw new OtpEmailDeliveryException('Mailpit SMTP delivery failed.', 0, $exception);
+        throw new OtpEmailDeliveryException('SMTP email delivery failed.', 0, $exception);
     }
 
     return true;

@@ -44,6 +44,29 @@ $check(
     'Allow test checkout with valid API credentials and no webhook secret'
 );
 $check(
+    !payment_razorpay_credentials_are_valid($validTestCredentials, 'production', true),
+    'Keep production test keys disabled by default'
+);
+$check(
+    payment_razorpay_credentials_are_valid($validTestCredentials, 'production', true, true),
+    'Allow production-hosted sandbox checkout only when explicitly enabled'
+);
+$validLiveCredentials = [
+    'razorpay_key_id' => 'rzp_live_fixture',
+    'razorpay_key_secret' => 'fixture_secret',
+    'razorpay_webhook_secret' => '',
+];
+$check(
+    payment_razorpay_credentials_are_valid($validLiveCredentials, 'production', true),
+    'Continue allowing live credentials in production by default'
+);
+$invalidTestCredentials = $validTestCredentials;
+$invalidTestCredentials['razorpay_key_id'] = 'invalid_key_id';
+$check(
+    !payment_razorpay_credentials_are_valid($invalidTestCredentials, 'production', true, true),
+    'Reject malformed keys even when production sandbox mode is enabled'
+);
+$check(
     !payment_razorpay_credentials_are_valid(
         ['razorpay_key_id' => '', 'razorpay_key_secret' => '', 'razorpay_webhook_secret' => ''],
         'development',

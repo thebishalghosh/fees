@@ -1,6 +1,5 @@
 Options -Indexes -MultiViews
 RewriteEngine On
-RewriteBase /fees/
 
 # Never serve hidden files or application internals through Apache.
 RewriteRule "(^|/)\." - [F,END]

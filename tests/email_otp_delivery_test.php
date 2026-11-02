@@ -134,7 +134,7 @@ if ($diagnosticLog === false) {
 } else {
     $previousErrorLog = ini_get('error_log');
     ini_set('error_log', $diagnosticLog);
-    log_mailpit_delivery_failure(
+    log_email_delivery_failure(
         'smtp_send_failed',
         new RuntimeException('SMTP rejected code 654321 for registered@example.test'),
         'registered@example.test'

@@ -95,6 +95,10 @@ function app_config(): array
             'razorpay_key_id' => trim((string) ($combined['RAZORPAY_KEY_ID'] ?? '')),
             'razorpay_key_secret' => (string) ($combined['RAZORPAY_KEY_SECRET'] ?? ''),
             'razorpay_webhook_secret' => (string) ($combined['RAZORPAY_WEBHOOK_SECRET'] ?? ''),
+            'allow_test_keys_in_production' => filter_var(
+                $combined['RAZORPAY_ALLOW_TEST_KEYS_IN_PRODUCTION'] ?? '0',
+                FILTER_VALIDATE_BOOLEAN
+            ),
             'timeout_seconds' => 15,
         ],
     ];
