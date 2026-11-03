@@ -13,7 +13,8 @@ function render_app_page_start(
     array $pageStyles = []
 ): void
 {
-    render_page_head($title, $pageStyles);
+    $institutionBranding = institution_branding_get_for_current_user();
+    render_page_head($title, $pageStyles, $institutionBranding);
     ?>
 <body class="app-page<?php echo $context === 'admin' ? ' app-page-admin' : ''; ?>">
 <?php render_site_header($context); ?>

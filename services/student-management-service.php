@@ -27,12 +27,13 @@ function student_management_bind_params(mysqli_stmt $statement, string $types, a
 
 function student_management_institution_id(): int
 {
-    $user = current_user();
-    if ($user === null || !in_array($user['user_type'], ['super_admin', 'admin', 'staff'], true)) {
-        throw new RuntimeException('An authorized institution user is required.');
+    $institutionId = authenticated_institution_id(['super_admin', 'admin', 'staff']);
+    if ($institutionId === null) {
+        http_response_code(403);
+        exit('Institution access is unavailable for this account.');
     }
 
-    return (int) $user['institution_id'];
+    return $institutionId;
 }
 
 function student_management_valid_date(string $date): bool

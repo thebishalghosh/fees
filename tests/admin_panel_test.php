@@ -28,11 +28,56 @@ $check(
 $validInstitution = admin_panel_validate_institution([
     'name' => 'Example Academy',
     'country' => 'India',
+    'institution_type' => 'school',
+    'currency_code' => 'INR',
     'email' => 'office@example.test',
     'website' => 'https://example.test',
 ]);
 $check($validInstitution['name'] === 'Example Academy', 'Accept a valid institution profile');
 $check($validInstitution['short_name'] === null, 'Normalize omitted optional profile values to null');
+$check(
+    $validInstitution['institution_type'] === 'school'
+        && $validInstitution['currency_code'] === 'INR'
+        && $validInstitution['established_year'] === null,
+    'Validate and normalize institution type, currency, and optional established year'
+);
+$invalidInstitutionCodeRejected = false;
+try {
+    admin_panel_validate_institution([
+        'name' => 'Example Academy',
+        'country' => 'India',
+        'institution_type' => 'school',
+        'code' => 'CODE WITH SPACES',
+    ]);
+} catch (InvalidArgumentException) {
+    $invalidInstitutionCodeRejected = true;
+}
+$check($invalidInstitutionCodeRejected, 'Reject profile institution codes outside the staff login format');
+
+$invalidInstitutionTypeRejected = false;
+try {
+    admin_panel_validate_institution([
+        'name' => 'Example Academy',
+        'country' => 'India',
+        'institution_type' => 'training-centre',
+    ]);
+} catch (InvalidArgumentException) {
+    $invalidInstitutionTypeRejected = true;
+}
+$check($invalidInstitutionTypeRejected, 'Reject institution types outside the supported list');
+
+$invalidInstitutionCurrencyRejected = false;
+try {
+    admin_panel_validate_institution([
+        'name' => 'Example Academy',
+        'country' => 'India',
+        'institution_type' => 'school',
+        'currency_code' => 'IN',
+    ]);
+} catch (InvalidArgumentException) {
+    $invalidInstitutionCurrencyRejected = true;
+}
+$check($invalidInstitutionCurrencyRejected, 'Reject unsupported institution currency codes');
 
 $logoFixture = tempnam(sys_get_temp_dir(), 'institution-logo-test-');
 if ($logoFixture === false) {
@@ -161,7 +206,7 @@ $check($oversizedLogoRejected, 'Reject institution logo uploads larger than 2 MB
 @unlink($dimensionFixture);
 @unlink($oversizedFixture);
 
-$settingsRoute = file_get_contents(__DIR__ . '/../admin/settings/general.php');
+$settingsRoute = file_get_contents(__DIR__ . '/../admin/settings/institution.php');
 $logoEndpoint = file_get_contents(__DIR__ . '/../admin/institution-logo.php');
 $parentLogoEndpoint = file_get_contents(__DIR__ . '/../parent/institution-logo.php');
 $check(
@@ -183,7 +228,12 @@ $check(
 
 $invalidEmailRejected = false;
 try {
-    admin_panel_validate_institution(['name' => 'Example Academy', 'country' => 'India', 'email' => 'invalid']);
+    admin_panel_validate_institution([
+        'name' => 'Example Academy',
+        'country' => 'India',
+        'institution_type' => 'school',
+        'email' => 'invalid',
+    ]);
 } catch (InvalidArgumentException) {
     $invalidEmailRejected = true;
 }
@@ -191,7 +241,12 @@ $check($invalidEmailRejected, 'Reject invalid institution email addresses');
 
 $unsafeWebsiteRejected = false;
 try {
-    admin_panel_validate_institution(['name' => 'Example Academy', 'country' => 'India', 'website' => 'javascript:alert(1)']);
+    admin_panel_validate_institution([
+        'name' => 'Example Academy',
+        'country' => 'India',
+        'institution_type' => 'school',
+        'website' => 'javascript:alert(1)',
+    ]);
 } catch (InvalidArgumentException) {
     $unsafeWebsiteRejected = true;
 }

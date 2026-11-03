@@ -4,7 +4,7 @@
 }
 
 .parent-children-breadcrumb a {
-    color: var(--cobalt-700);
+    color: var(--cobalt);
     text-decoration: none;
 }
 
@@ -23,7 +23,7 @@
     padding: 1rem 1.1rem;
     border: 1px solid #e7ecf3;
     border-radius: 14px;
-    background: #fff;
+    background: var(--surface);
     box-shadow: 0 5px 16px rgb(29 52 84 / 4%);
 }
 
@@ -73,7 +73,7 @@
     padding: 1.2rem;
     border: 1px solid #e7ecf3;
     border-radius: 16px;
-    background: #fff;
+    background: var(--surface);
     box-shadow: 0 6px 20px rgb(29 52 84 / 4%);
 }
 

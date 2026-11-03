@@ -22,7 +22,8 @@ if ($assignmentId === false || !is_string($firstDueDate)) {
 try {
     $result = fee_workflow_generate_installments(
         db_connect(),
-        (int) $user['institution_id'],
+        authenticated_institution_id(['super_admin', 'admin', 'staff'])
+            ?? throw new RuntimeException('Institution access is unavailable for this account.'),
         (int) $user['id'],
         $assignmentId,
         $firstDueDate

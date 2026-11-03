@@ -4,6 +4,11 @@
     transition: background-color .25s ease, padding .25s ease, box-shadow .25s ease;
 }
 
+.site-navbar-app .site-nav-toggle {
+    border-color: color-mix(in srgb, var(--brand-header-text) 45%, transparent);
+    color: var(--brand-header-text);
+}
+
 .site-navbar-public {
     position: fixed;
     inset: 0 0 auto;
@@ -21,8 +26,41 @@
 .site-navbar-app {
     position: sticky;
     top: 0;
-    background: var(--cobalt-900);
+    color: var(--brand-header-text);
+    background: var(--brand-header-background);
     box-shadow: 0 8px 24px -18px rgb(0 0 0 / 70%);
+}
+
+.site-navbar-app .navbar-brand,
+.site-navbar-app .nav-link,
+.site-navbar-app .workspace-label,
+.site-navbar-app .site-nav-toggle {
+    color: var(--brand-header-text) !important;
+}
+
+.site-navbar-app .nav-link {
+    opacity: .84;
+}
+
+.site-navbar-app .nav-link:hover,
+.site-navbar-app .nav-link:focus-visible {
+    opacity: 1;
+}
+
+.site-navbar-app .workspace-label {
+    opacity: .9;
+}
+
+.site-navbar-app .btn-outline-light {
+    border-color: color-mix(in srgb, var(--brand-header-text) 55%, transparent);
+    color: var(--brand-header-text);
+}
+
+.site-navbar-app .btn-outline-light:hover,
+.site-navbar-app .btn-outline-light:focus-visible {
+    border-color: var(--brand-header-text);
+    color: var(--brand-header-background);
+    background: var(--brand-header-text);
 }
 
 .site-brand {
@@ -42,7 +80,7 @@
     place-items: center;
     border: 1px solid rgb(255 255 255 / 25%);
     border-radius: 12px;
-    color: #fff;
+    color: var(--brand-button-text);
     background: linear-gradient(135deg, var(--cobalt-300), var(--cobalt));
     box-shadow: 0 8px 20px -8px rgb(0 71 171 / 90%);
     font-size: 1.15rem;
@@ -82,11 +120,9 @@
 }
 
 .site-nav-toggle {
-    border-color: rgb(255 255 255 / 38%);
-}
-
-.site-nav-toggle .navbar-toggler-icon {
-    filter: invert(1);
+    border-color: color-mix(in srgb, currentColor 45%, transparent);
+    color: currentColor;
+    font-size: 1.4rem;
 }
 
 .workspace-label {
@@ -238,7 +274,7 @@
 
 .app-page {
     min-height: 100vh;
-    background: #f6f8fc;
+    background: var(--cobalt-50);
 }
 
 @media (min-width: 992px) {
@@ -330,16 +366,22 @@
     flex: 0 0 260px;
     padding: 1.35rem 1rem;
     border-right: 1px solid var(--line);
-    background: #fff;
+    color: var(--brand-sidebar-text);
+    background: var(--brand-sidebar-background);
 }
 
 .app-sidebar .offcanvas-body {
     padding: 0;
 }
 
+.app-sidebar .offcanvas-header {
+    color: var(--brand-sidebar-text);
+    background: var(--brand-sidebar-background);
+}
+
 .sidebar-heading {
     padding: .5rem .8rem .85rem;
-    color: #8490a8;
+    color: var(--brand-sidebar-text);
     font-size: .68rem;
     font-weight: 700;
     letter-spacing: .15em;
@@ -356,7 +398,7 @@
     gap: .8rem;
     padding: .72rem .8rem;
     border-radius: 10px;
-    color: var(--muted);
+    color: var(--brand-sidebar-text);
     font-size: .88rem;
     font-weight: 500;
 }
@@ -365,12 +407,12 @@
 .sidebar-nav .nav-link:focus-visible,
 .sidebar-nav .nav-link.active {
     color: var(--cobalt);
-    background: var(--cobalt-50);
+    background: color-mix(in srgb, var(--brand-primary) 9%, var(--brand-sidebar-background));
 }
 
 .sidebar-nav .nav-link i {
     width: 1.2rem;
-    color: var(--cobalt-300);
+    color: var(--brand-primary);
     font-size: 1rem;
 }
 
@@ -379,10 +421,10 @@
     gap: .65rem;
     margin: 1rem .3rem 0;
     padding: .85rem;
-    border: 1px solid var(--cobalt-100);
+    border: 1px solid color-mix(in srgb, var(--brand-primary) 16%, var(--brand-sidebar-background));
     border-radius: var(--radius-sm);
     color: var(--muted);
-    background: var(--cobalt-50);
+    background: color-mix(in srgb, var(--brand-primary) 5%, var(--brand-sidebar-background));
     font-size: .72rem;
     line-height: 1.5;
 }

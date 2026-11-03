@@ -5,6 +5,140 @@ const INSTITUTION_LOGO_MAX_BYTES = 2097152;
 const INSTITUTION_LOGO_MAX_DIMENSION = 4000;
 const INSTITUTION_LOGO_MAX_PIXELS = 10000000;
 
+function institution_branding_default_settings(): array
+{
+    return [
+        'brand_primary_color' => '#0047AB',
+        'brand_secondary_color' => '#003A8C',
+        'brand_accent_color' => '#C9A35B',
+        'brand_sidebar_background' => '#FFFFFF',
+        'brand_sidebar_text' => '#5B6782',
+        'brand_header_background' => '#00183F',
+        'brand_header_text' => '#FFFFFF',
+        'brand_page_background' => '#F6F8FC',
+        'brand_surface_background' => '#FFFFFF',
+        'brand_button_background' => '#0047AB',
+        'brand_button_text' => '#FFFFFF',
+        'login_background_color' => '#F3F7FD',
+        'login_primary_color' => '#0047AB',
+        'login_welcome_text' => '',
+    ];
+}
+
+function institution_branding_validate_settings(array $input): array
+{
+    $values = [];
+    foreach (institution_branding_default_settings() as $key => $default) {
+        $value = $input[$key] ?? $default;
+        if (!is_string($value)) {
+            throw new InvalidArgumentException('The branding form contains invalid values.');
+        }
+        $value = trim($value);
+        if ($key === 'login_welcome_text') {
+            if (mb_strlen($value, 'UTF-8') > 120 || preg_match('/[\x00-\x1F\x7F]/', $value) === 1) {
+                throw new InvalidArgumentException('The login welcome text must be 120 characters or fewer.');
+            }
+            $values[$key] = $value;
+            continue;
+        }
+        if (preg_match('/^#[0-9A-Fa-f]{6}$/D', $value) !== 1) {
+            throw new InvalidArgumentException('Choose valid six-digit HEX colors for all branding fields.');
+        }
+        $values[$key] = strtoupper($value);
+    }
+
+    $contrastPairs = [
+        ['brand_sidebar_background', 'brand_sidebar_text'],
+        ['brand_header_background', 'brand_header_text'],
+        ['brand_button_background', 'brand_button_text'],
+        ['brand_surface_background', null],
+        ['brand_page_background', null],
+        ['brand_primary_color', 'brand_surface_background'],
+        ['brand_primary_color', 'brand_sidebar_background'],
+        ['brand_primary_color', 'brand_button_text'],
+        ['brand_secondary_color', 'brand_surface_background'],
+        ['brand_secondary_color', 'brand_button_text'],
+        ['login_background_color', null],
+        ['login_primary_color', 'brand_button_text'],
+    ];
+    foreach ($contrastPairs as [$backgroundKey, $textKey]) {
+        $background = $values[$backgroundKey];
+        $foreground = $textKey === null ? '#0E1A33' : $values[$textKey];
+        if (institution_branding_contrast_ratio($foreground, $background) < 4.5) {
+            throw new InvalidArgumentException('Some color combinations do not provide readable text contrast.');
+        }
+    }
+    if (institution_branding_contrast_ratio('#FFFFFF', $values['brand_primary_color']) < 4.5) {
+        throw new InvalidArgumentException('The primary color must remain readable on white document backgrounds.');
+    }
+
+    return $values;
+}
+
+function institution_branding_contrast_ratio(string $foreground, string $background): float
+{
+    $luminance = static function (string $color): float {
+        $channels = [
+            hexdec(substr($color, 1, 2)) / 255,
+            hexdec(substr($color, 3, 2)) / 255,
+            hexdec(substr($color, 5, 2)) / 255,
+        ];
+        $linear = array_map(
+            static fn(float $channel): float => $channel <= 0.04045
+                ? $channel / 12.92
+                : (($channel + 0.055) / 1.055) ** 2.4,
+            $channels
+        );
+
+        return 0.2126 * $linear[0] + 0.7152 * $linear[1] + 0.0722 * $linear[2];
+    };
+    $foregroundLuminance = $luminance($foreground);
+    $backgroundLuminance = $luminance($background);
+
+    return (max($foregroundLuminance, $backgroundLuminance) + 0.05)
+        / (min($foregroundLuminance, $backgroundLuminance) + 0.05);
+}
+
+function institution_branding_settings(mysqli $db, int $institutionId): array
+{
+    $settings = institution_branding_default_settings();
+    $keys = array_keys($settings);
+    $placeholders = implode(', ', array_fill(0, count($keys), '?'));
+    $statement = $db->prepare(
+        'SELECT setting_key, setting_value
+         FROM system_settings
+         WHERE institution_id = ? AND setting_key IN (' . $placeholders . ')'
+    );
+    $types = 'i' . str_repeat('s', count($keys));
+    $parameters = [$types, &$institutionId];
+    foreach ($keys as &$key) {
+        $parameters[] = &$key;
+    }
+    unset($key);
+    if (!call_user_func_array([$statement, 'bind_param'], $parameters)) {
+        throw new RuntimeException('Institution branding settings could not be loaded.');
+    }
+    $statement->execute();
+    $result = $statement->get_result();
+    while ($row = $result->fetch_assoc()) {
+        $key = (string) $row['setting_key'];
+        $value = $row['setting_value'];
+        if ($key === 'login_welcome_text'
+            && is_string($value)
+            && mb_strlen($value, 'UTF-8') <= 120
+            && preg_match('/[\x00-\x1F\x7F]/', $value) !== 1) {
+            $settings[$key] = $value;
+        } elseif (array_key_exists($key, $settings)
+            && is_string($value)
+            && preg_match('/^#[0-9A-Fa-f]{6}$/D', $value) === 1) {
+            $settings[$key] = strtoupper($value);
+        }
+    }
+    $statement->close();
+
+    return $settings;
+}
+
 function institution_branding_logo_file(?string $logoPath): ?array
 {
     if ($logoPath === null || str_contains($logoPath, "\0")) {
@@ -52,6 +186,13 @@ function institution_branding_logo_file(?string $logoPath): ?array
     }
 
     return ['path' => $filePath, 'mime_type' => $mimeType];
+}
+
+function institution_branding_logo_version(?string $logoPath): string
+{
+    return $logoPath === null || $logoPath === ''
+        ? '0'
+        : substr(hash('sha256', $logoPath), 0, 16);
 }
 
 function institution_branding_validate_logo_upload(array $upload, bool $requireUploadedFile = true): array
@@ -163,7 +304,10 @@ function institution_branding_delete_logo_file(?string $logoPath): void
 
 function institution_branding_get(mysqli $db, int $institutionId): ?array
 {
-    $statement = $db->prepare('SELECT id, name, logo_path FROM institutions WHERE id = ? LIMIT 1');
+    $statement = $db->prepare(
+        'SELECT id, name, short_name, code, institution_type, logo_path, status
+         FROM institutions WHERE id = ? LIMIT 1'
+    );
     $statement->bind_param('i', $institutionId);
     $statement->execute();
     $institution = $statement->get_result()->fetch_assoc();
@@ -172,8 +316,101 @@ function institution_branding_get(mysqli $db, int $institutionId): ?array
         return null;
     }
     $institution['id'] = (int) $institution['id'];
+    $institution['branding'] = institution_branding_settings($db, $institutionId);
 
     return $institution;
+}
+
+function institution_branding_get_for_current_user(?mysqli $db = null): ?array
+{
+    $institutionId = authenticated_institution_id(['admin', 'staff', 'parent']);
+    if ($institutionId === null) {
+        return null;
+    }
+    static $cache = [];
+    if (!array_key_exists($institutionId, $cache)) {
+        $db ??= db_connect();
+        $cache[$institutionId] = institution_branding_get($db, $institutionId);
+    }
+
+    return $cache[$institutionId];
+}
+
+function institution_branding_get_for_login_code(mysqli $db, string $institutionCode): ?array
+{
+    $institutionCode = trim($institutionCode);
+    if (preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]{0,49}$/D', $institutionCode) !== 1) {
+        return null;
+    }
+    $statement = $db->prepare(
+        "SELECT id, name, short_name, code, institution_type, logo_path, status
+         FROM institutions WHERE code = ? AND status = 'active' LIMIT 1"
+    );
+    $statement->bind_param('s', $institutionCode);
+    $statement->execute();
+    $institution = $statement->get_result()->fetch_assoc();
+    $statement->close();
+    if (!is_array($institution)) {
+        return null;
+    }
+    $institution['id'] = (int) $institution['id'];
+    $institution['branding'] = institution_branding_settings($db, $institution['id']);
+
+    return $institution;
+}
+
+function institution_branding_save(mysqli $db, int $institutionId, array $input): void
+{
+    require_login();
+    $actor = current_user();
+    if ($actor === null
+        || ($actor['user_type'] ?? null) !== 'super_admin'
+        || ($actor['role_is_system'] ?? false) !== true) {
+        http_response_code(403);
+        exit('Forbidden.');
+    }
+    if ($institutionId < 1) {
+        throw new InvalidArgumentException('Choose a valid institution.');
+    }
+    $values = institution_branding_validate_settings($input);
+    $db->begin_transaction();
+    try {
+        $statement = $db->prepare('SELECT id FROM institutions WHERE id = ? LIMIT 1 FOR UPDATE');
+        $statement->bind_param('i', $institutionId);
+        $statement->execute();
+        $institution = $statement->get_result()->fetch_assoc();
+        $statement->close();
+        if (!is_array($institution)) {
+            throw new OutOfBoundsException('Institution not found.');
+        }
+        $oldValues = institution_branding_settings($db, $institutionId);
+        $statement = $db->prepare(
+            'INSERT INTO system_settings (institution_id, setting_key, setting_value, updated_by)
+             VALUES (?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_by = VALUES(updated_by)'
+        );
+        $actorId = (int) $actor['id'];
+        foreach ($values as $key => $value) {
+            $statement->bind_param('issi', $institutionId, $key, $value, $actorId);
+            $statement->execute();
+        }
+        $statement->close();
+        write_audit_log(
+            $db,
+            $institutionId,
+            (int) $actor['id'],
+            'super_admin',
+            'institution.branding_updated',
+            'institution',
+            (string) $institutionId,
+            $oldValues,
+            $values
+        );
+        $db->commit();
+    } catch (Throwable $exception) {
+        $db->rollback();
+        throw $exception;
+    }
 }
 
 function institution_branding_send_logo(mysqli $db, int $institutionId): never

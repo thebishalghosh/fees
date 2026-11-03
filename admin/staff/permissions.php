@@ -8,7 +8,11 @@ require_http_methods(['GET', 'POST']);
 require_placeholder_route_access();
 $db = db_connect();
 $user = current_user();
-$institutionId = (int) $user['institution_id'];
+$institutionId = authenticated_institution_id(['admin', 'super_admin']);
+if ($institutionId === null) {
+    http_response_code(403);
+    exit('Institution access is unavailable for this account.');
+}
 $actorUserId = (int) $user['id'];
 rbac_assert_manager($institutionId);
 $roles = rbac_list_roles($db, $institutionId);

@@ -18,6 +18,7 @@ RewriteRule ^resend-otp/?$ auth/resend-otp.php [END]
 RewriteRule ^verify-parent-email/?$ auth/verify-parent-email.php [END]
 RewriteRule ^request-parent-verification/?$ auth/request-parent-verification.php [END]
 RewriteRule ^logout/?$ auth/logout.php [END]
+RewriteRule ^institution-logo/?$ public/institution-logo.php [END,QSA]
 
 # Keep the class creation handler outside the classes.php route namespace.
 RewriteRule ^admin/academics/classes/create/?$ admin/academics/create-class.php [END,QSA]
@@ -27,7 +28,7 @@ RewriteRule ^admin/academics/classes/?$ admin/academics/classes.php [END,QSA]
 
 # Resolve clean application paths only when the corresponding PHP handler exists.
 RewriteCond %{REQUEST_FILENAME}.php -f
-RewriteRule ^(auth|admin|parent)/(.+)$ $1/$2.php [END,QSA]
+RewriteRule ^(auth|admin|parent|super-admin)/(.+)$ $1/$2.php [END,QSA]
 
 <FilesMatch "(?i)^(?:\.env(?:\..*)?|composer\.(?:json|lock)|.*\.(?:sql|log|ini|ya?ml|bak|old|dist))$">
     Require all denied

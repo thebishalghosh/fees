@@ -10,17 +10,40 @@
 
 .btn-cobalt {
     border: 0;
-    color: #fff;
-    background: linear-gradient(135deg, var(--cobalt), var(--cobalt-600));
+    color: var(--brand-button-text);
+    background: linear-gradient(135deg, var(--brand-button-background), var(--cobalt-600));
     box-shadow: 0 12px 28px -10px rgb(0 71 171 / 70%);
 }
 
 .btn-cobalt:hover,
 .btn-cobalt:focus-visible {
-    color: #fff;
-    background: linear-gradient(135deg, var(--cobalt-600), var(--cobalt-700));
+    color: var(--brand-button-text);
+    background: linear-gradient(135deg, var(--brand-button-background), var(--cobalt-600));
     box-shadow: 0 18px 34px -10px rgb(0 71 171 / 75%);
     transform: translateY(-2px);
+}
+
+.btn-primary {
+    --bs-btn-color: var(--brand-button-text);
+    --bs-btn-bg: var(--brand-button-background);
+    --bs-btn-border-color: var(--brand-button-background);
+    --bs-btn-hover-color: var(--brand-button-text);
+    --bs-btn-hover-bg: var(--brand-button-background);
+    --bs-btn-hover-border-color: var(--brand-button-background);
+    --bs-btn-active-color: var(--brand-button-text);
+    --bs-btn-active-bg: var(--brand-button-background);
+    --bs-btn-active-border-color: var(--brand-button-background);
+}
+
+.btn-outline-primary {
+    --bs-btn-color: var(--brand-primary);
+    --bs-btn-border-color: var(--brand-primary);
+    --bs-btn-hover-color: #fff;
+    --bs-btn-hover-bg: var(--brand-primary);
+    --bs-btn-hover-border-color: var(--brand-primary);
+    --bs-btn-active-color: #fff;
+    --bs-btn-active-bg: var(--brand-primary);
+    --bs-btn-active-border-color: var(--brand-primary);
 }
 
 .btn-gold {
@@ -64,7 +87,7 @@
     border-color: #d7dfec;
     border-radius: 11px;
     color: var(--ink);
-    background-color: #fff;
+    background-color: var(--brand-surface-background);
     font-size: .88rem;
 }
 
@@ -74,8 +97,8 @@
 
 .form-control:focus,
 .form-select:focus {
-    border-color: var(--cobalt-300);
-    box-shadow: 0 0 0 .22rem rgb(0 71 171 / 12%);
+    border-color: var(--brand-primary);
+    box-shadow: 0 0 0 .22rem color-mix(in srgb, var(--brand-primary) 14%, transparent);
 }
 
 .form-text {
@@ -84,8 +107,8 @@
 }
 
 .form-check-input:checked {
-    border-color: var(--cobalt);
-    background-color: var(--cobalt);
+    border-color: var(--brand-primary);
+    background-color: var(--brand-primary);
 }
 
 .table {
@@ -505,7 +528,7 @@
     height: 100%;
     border: 1px solid var(--line);
     border-radius: var(--radius);
-    background: #fff;
+    background: var(--brand-surface-background);
     box-shadow: 0 12px 35px -28px rgb(0 45 110 / 45%);
 }
 

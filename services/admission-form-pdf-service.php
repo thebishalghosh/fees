@@ -34,6 +34,13 @@ function student_admission_pdf_format_date(?string $date, bool $includeTime = fa
 
 function student_admission_pdf_html(array $student): string
 {
+    $brandingSettings = institution_branding_default_settings();
+    $institutionId = filter_var($student['institution_id'] ?? null, FILTER_VALIDATE_INT);
+    if ($institutionId !== false && $institutionId !== null && $institutionId > 0) {
+        $brandingSettings = institution_branding_settings(db_connect(), (int) $institutionId);
+    }
+    $brandPrimary = $brandingSettings['brand_primary_color'];
+    $brandAccent = $brandingSettings['brand_accent_color'];
     $institutionAddress = array_filter([
         $student['institution_address_line1'] ?? null,
         $student['institution_address_line2'] ?? null,
@@ -64,17 +71,17 @@ function student_admission_pdf_html(array $student): string
     <style>
         @page { size: A4 portrait; margin: 11mm 13mm 12mm; }
         body { color: #243247; font-family: "DejaVu Sans", sans-serif; font-size: 8.5pt; line-height: 1.25; }
-        .institution { border-bottom: 1.5px solid #254b7c; margin-bottom: 9px; padding-bottom: 6px; }
+        .institution { border-bottom: 1.5px solid <?php echo e($brandPrimary); ?>; margin-bottom: 9px; padding-bottom: 6px; }
         .brand { display: table; table-layout: fixed; width: 100%; }
         .logo, .brand-copy { display: table-cell; vertical-align: middle; }
         .logo { width: 54px; }
         .logo img { max-height: 42px; max-width: 48px; }
-        .institution-name { color: #17365d; font-size: 12pt; font-weight: bold; margin: 0; }
+        .institution-name { color: <?php echo e($brandPrimary); ?>; font-size: 12pt; font-weight: bold; margin: 0; }
         .institution-detail { color: #66758b; font-size: 7.2pt; margin: 1px 0 0; overflow-wrap: break-word; word-wrap: break-word; }
-        .document-title { color: #17365d; font-size: 12pt; font-weight: bold; margin: 7px 0 3px; text-align: center; }
+        .document-title { color: <?php echo e($brandPrimary); ?>; font-size: 12pt; font-weight: bold; margin: 7px 0 3px; text-align: center; }
         .document-subtitle { color: #66758b; font-size: 7.5pt; margin: 0 0 7px; text-align: center; }
-        .reference { background: #f1f5fa; border: 1px solid #dce5f0; color: #17365d; font-size: 8.5pt; font-weight: bold; margin-bottom: 7px; padding: 5px 7px; }
-        h2 { border-bottom: 1px solid #dce5f0; color: #254b7c; font-size: 9pt; margin: 8px 0 4px; padding-bottom: 2px; }
+        .reference { background: #f1f5fa; border: 1px solid #dce5f0; border-left: 3px solid <?php echo e($brandAccent); ?>; color: #17365d; font-size: 8.5pt; font-weight: bold; margin-bottom: 7px; padding: 5px 7px; }
+        h2 { border-bottom: 1px solid #dce5f0; color: <?php echo e($brandPrimary); ?>; font-size: 9pt; margin: 8px 0 4px; padding-bottom: 2px; }
         table { border-collapse: collapse; table-layout: fixed; width: 100%; }
         td { padding: 3px 5px; vertical-align: top; }
         .details td { border-bottom: 1px solid #edf0f4; }

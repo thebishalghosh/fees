@@ -22,6 +22,25 @@ function current_user(): ?array
     return $user;
 }
 
+function authenticated_institution_id(array $allowedUserTypes): ?int
+{
+    $user = current_user();
+    if ($user === null) {
+        return null;
+    }
+
+    foreach ($allowedUserTypes as $userType) {
+        if (!is_string($userType)
+            || !in_array($userType, ['super_admin', 'admin', 'staff', 'parent'], true)) {
+            throw new InvalidArgumentException('The requested institution account type is not recognized.');
+        }
+    }
+
+    return in_array($user['user_type'], $allowedUserTypes, true)
+        ? (int) $user['institution_id']
+        : null;
+}
+
 function is_authenticated(): bool
 {
     return current_user() !== null

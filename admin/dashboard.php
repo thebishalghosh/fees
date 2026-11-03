@@ -9,6 +9,8 @@ require_placeholder_route_access();
 $institutionId = admin_panel_institution_id();
 $data = admin_panel_dashboard_data(db_connect(), $institutionId, user_has_permission('payments.view'));
 $counts = $data['counts'];
+$user = current_user();
+$staffName = is_string($user['full_name'] ?? null) ? trim($user['full_name']) : '';
 $canViewFinancialSummary = user_has_compatible_permission('financial_reports.view', 'reports.view');
 
 $cards = [
@@ -37,7 +39,7 @@ render_app_page_start(
 <section class="dashboard-welcome" aria-labelledby="dashboard-welcome-title">
     <div>
         <span class="dashboard-demo-label"><i class="bi bi-database-check" aria-hidden="true"></i>Live institution data</span>
-        <h2 id="dashboard-welcome-title">Welcome to your dashboard</h2>
+        <h2 id="dashboard-welcome-title">Welcome<?php echo $staffName !== '' ? ', ' . e($staffName) : ''; ?></h2>
         <p>Summary values use saved fee assignments, verified payments, and processed refund records for this institution.</p>
     </div>
     <div class="dashboard-today"><i class="bi bi-calendar3" aria-hidden="true"></i><time datetime="<?php echo e(date('Y-m-d')); ?>"><?php echo e(date('l, j F Y')); ?></time></div>

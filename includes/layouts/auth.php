@@ -7,12 +7,23 @@ require_once __DIR__ . '/footer.php';
 
 function render_auth_page_start(string $title, string $description): void
 {
-    render_page_head($title);
+    $institutionCode = is_string($_GET['institution_code'] ?? null)
+        ? $_GET['institution_code']
+        : '';
+    $institutionBranding = $institutionCode === ''
+        ? null
+        : institution_branding_get_for_login_code(db_connect(), $institutionCode);
+    render_page_head($title, [], $institutionBranding, true);
     ?>
 <body class="public-placeholder">
-<?php render_site_header('public-placeholder'); ?>
+<?php render_site_header('public-placeholder', $institutionBranding); ?>
 <main class="public-placeholder-main">
     <section class="public-placeholder-card auth-card" aria-labelledby="auth-page-title">
+        <?php if (is_array($institutionBranding)): ?>
+            <?php if (is_string($institutionBranding['branding']['login_welcome_text'] ?? null) && $institutionBranding['branding']['login_welcome_text'] !== ''): ?>
+                <p class="institution-login-welcome"><?php echo e($institutionBranding['branding']['login_welcome_text']); ?></p>
+            <?php endif; ?>
+        <?php endif; ?>
         <span class="placeholder-icon" aria-hidden="true"><i class="bi bi-shield-lock"></i></span>
         <span class="eyebrow">Secure sign-in</span>
         <h1 id="auth-page-title"><?php echo e($title); ?></h1>

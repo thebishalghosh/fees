@@ -267,3 +267,80 @@ These are the files directly inspected or targeted in detail and their audit pur
 ## Verification result
 
 This audit created only the requested `INSTITUTION_SETTINGS_AUDIT.md`. No application source/configuration files or database records were changed. No SQL, migration, test, database connection, upload, or runtime page request was performed.
+
+## Implementation update (2026-11-03)
+
+The original audit above is a point-in-time account of the pre-enhancement implementation. The following implementation has since been added; it does not change the audit's original findings or imply that deployment-time database/runtime behavior has been verified.
+
+- The existing `/admin/settings/general` profile now collects the institution type, principal/director, registration, affiliation/accreditation, established year, and institution currency in addition to the prior profile fields. Institution codes retain the format accepted by staff login and parent verification, and the form warns that changing a code may affect both workflows. The existing logo workflow remains in place.
+- The new `/super-admin/institutions` route is restricted at the route and service layers to a system Super Admin. It supports institution creation, listing/search/status filtering, details, profile updates, and activation/deactivation without deletion. Creation transactionally adds an institution and its first institution-linked Admin using the existing global Admin system role. No password is set and no OTP or email is sent during onboarding; the Super Admin must confirm the email can receive mail, after which the Admin can request an OTP through the existing staff sign-in flow.
+- A forward-only migration, [`database/migrations/20261103_add_institution_profile_fields.sql`](database/migrations/20261103_add_institution_profile_fields.sql), adds only missing institution profile fields and `currency_code CHAR(3) NOT NULL DEFAULT 'INR'`. The checked-in schema snapshot was updated. Existing institutions receive the database default when the migration is applied. The migration has **not** been run.
+- Currency is stored as profile preference only. No payment, Razorpay, receipt, or historical transaction behavior was changed; amounts are not converted or reinterpreted.
+- Tenant access, status checks, CSRF, field validation, prepared statements, and audit-log calls are used by the new workflow. These were inspected in source; cross-tenant access and deactivation behavior were not exercised against a database or browser.
+
+### Implementation files
+
+Modified:
+
+- [`.htaccess`](.htaccess) — clean URL routing for the Super Admin institutions page.
+- [`admin/settings/general.php`](admin/settings/general.php) — extended existing institution profile form.
+- [`database/schema.sql`](database/schema.sql) — schema snapshot fields and default currency.
+- [`includes/layouts/sidebar.php`](includes/layouts/sidebar.php) — Super Admin-only navigation link.
+- [`services/admin-panel-service.php`](services/admin-panel-service.php) — institution profile retrieval, validation, and persistence for added fields.
+- [`tests/admin_panel_test.php`](tests/admin_panel_test.php) — profile validation regression checks.
+- [`INSTITUTION_SETTINGS_AUDIT.md`](INSTITUTION_SETTINGS_AUDIT.md) — this implementation-status addendum.
+
+Created:
+
+- [`database/migrations/20261103_add_institution_profile_fields.sql`](database/migrations/20261103_add_institution_profile_fields.sql) — forward schema migration; unapplied.
+- [`services/institution-onboarding-service.php`](services/institution-onboarding-service.php) — Super Admin authorization, validation, transactional onboarding, tenant-scoped administrator, listing, updates, status, and audit logging.
+- [`super-admin/institutions.php`](super-admin/institutions.php) — onboarding and institution management interface.
+- [`tests/institution_onboarding_test.php`](tests/institution_onboarding_test.php) — validation and source-contract checks.
+
+### Verification after implementation
+
+PHP 8.3 syntax checks passed for the changed PHP implementation and test files. The focused profile/logo and onboarding tests passed, as did the existing Admin password, staff email OTP, parent email OTP, and parent email verification tests. These tests do not constitute a database migration, end-to-end browser test, or cross-institution runtime test. No database connection, SQL, migration, upload, or payment/receipt test was performed.
+
+## Branding and page redesign update (2026-11-03)
+
+- Institution name and logo continue to use `institutions.name`, `short_name`, and `logo_path`; no duplicate identity/logo settings were introduced.
+- Theme colors and the optional login welcome text are stored in the existing `system_settings` table, keyed by both the authenticated/selected institution ID and setting key. Its existing unique key on `(institution_id, setting_key)` supports the branding settings. **No migration or schema change is required.**
+- The prior profile/onboarding migration [`database/migrations/20261103_add_institution_profile_fields.sql`](database/migrations/20261103_add_institution_profile_fields.sql) is still unapplied and remains a prerequisite for the details page’s profile fields; it was not run as part of this branding change.
+- Branding writes require a system Super Admin, validate six-digit HEX colors and readable text/background contrast, use prepared upserts in a transaction, and add an audit-log entry. Logo replacement/removal reuses the established MIME-, size-, and dimensions-checked storage workflow and existing logo audit handling.
+- Shared Admin/Staff and Parent layouts resolve the theme using the authenticated session’s institution ID. Super Admin pages are excluded from this resolver and retain platform colors; the institution details page uses an isolated preview. The student portal is not implemented. The institution-scoped admission-form PDF now uses the primary/accent colors; payment/receipt documents were not modified and retain their existing institution name/logo behavior.
+- Direct authentication pages can display institution branding when opened with `?institution_code=<code>`. This is presentation-only; the code is looked up server-side, no browser-supplied institution ID is used, and authentication/OTP processing is unchanged. The existing logo endpoints remain in place; new scoped handlers support Super Admin inspection and code-selected login logo display.
+- `/super-admin/institutions?id=...` now shows overview/profile/branding/administrator/security sections, actual student and staff account counts, image controls, color swatches/HEX fields, and a live local preview with reset and unsaved-change warnings. Invalid numeric IDs receive HTTP 400; valid but nonexistent IDs receive HTTP 404.
+
+### Branding implementation files
+
+Modified:
+
+- [`.htaccess`](.htaccess) — clean path for public institution logo retrieval by code.
+- [`includes/layouts/auth.php`](includes/layouts/auth.php) — optional institution-specific login presentation.
+- [`includes/layouts/head.php`](includes/layouts/head.php) — safe design-token output from validated theme values.
+- [`includes/layouts/header.php`](includes/layouts/header.php) — current-institution identity/logo and platform-only Super Admin branding.
+- [`includes/layouts/page.php`](includes/layouts/page.php) — apply saved theme to authenticated institution pages.
+- [`public/assets/css/components.css`](public/assets/css/components.css), [`public/assets/css/layout.css`](public/assets/css/layout.css), [`public/assets/css/responsive.css`](public/assets/css/responsive.css), [`public/assets/css/variables.css`](public/assets/css/variables.css) — shared theme tokens and responsive portal styles.
+- [`public/assets/css/pages/admin-dashboard.css`](public/assets/css/pages/admin-dashboard.css), [`public/assets/css/pages/parent-dashboard.css`](public/assets/css/pages/parent-dashboard.css), [`public/assets/css/pages/parent-children.css`](public/assets/css/pages/parent-children.css) — use institution theme tokens in common portal cards and surfaces.
+- [`services/institution-branding-service.php`](services/institution-branding-service.php) — setting validation, storage, retrieval, user-scoped resolution, and logo access.
+- [`services/admission-form-pdf-service.php`](services/admission-form-pdf-service.php) — use validated institution primary/accent colors in admission PDFs.
+- [`services/institution-onboarding-service.php`](services/institution-onboarding-service.php) — real per-institution student/staff counts.
+- [`super-admin/institutions.php`](super-admin/institutions.php) — redesigned details view and branding controls.
+
+Created:
+
+- [`public/assets/css/pages/super-admin-institutions.css`](public/assets/css/pages/super-admin-institutions.css) — responsive details and live-preview design.
+- [`public/assets/js/institution-branding.js`](public/assets/js/institution-branding.js) — unsaved local color preview and reset behavior.
+- [`public/institution-logo.php`](public/institution-logo.php) — public login logo response selected by validated institution code.
+- [`super-admin/institution-logo.php`](super-admin/institution-logo.php) — Super Admin-only institution logo preview.
+- [`tests/institution_branding_test.php`](tests/institution_branding_test.php) — color, contrast, tenant-storage, and route source checks.
+
+### Branding verification limits
+
+PHP syntax checks and the branding validation/source checks passed, along with the admission-form PDF, profile, onboarding, Admin password, staff email OTP, parent email OTP, and parent email verification tests. JavaScript syntax and `git diff --check` also passed. The browser request to the target details URL redirected to the login page because no authenticated Super Admin browser session was available; the details screen, logo operations, saved persistence, and two-institution isolation were therefore not browser- or database-tested. No SQL, migration, test-record insertion, or payment/receipt code change was made.
+
+## System Preferences route update (2026-11-03)
+
+- `/admin/settings/general` is now the read-only System Preferences overview. It does not expose institution profile or branding fields. No functional institution-editable preferences were present in `system_settings`; that table is used for institution branding. Timezone remains a platform-level `APP_TIMEZONE` value, while academic years, attendance, and announcements remain in their respective modules. The page does not claim that reference values are editable.
+- The prior Institution Admin profile/logo editor is preserved at `/admin/settings/institution`, replacing the former alias redirect. All profile and logo POST actions now return there. `/admin/settings/general` remains a valid route/bookmark; sidebar entries for System Preferences and Institution profile are separate.
+- This route move does not delete or alter institution fields, branding settings, or saved records. No settings schema, data, payment code, or OTP code was changed.

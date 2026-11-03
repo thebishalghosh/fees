@@ -20,4 +20,15 @@
     --shadow-md: 0 14px 40px -18px rgb(0 45 110 / 28%);
     --font-sans: "Inter", system-ui, sans-serif;
     --font-serif: "Playfair Display", Georgia, serif;
+    --brand-sidebar-background: #fff;
+    --brand-sidebar-text: #5b6782;
+    --brand-header-background: #00183f;
+    --brand-header-text: #fff;
+    --brand-button-background: #0047ab;
+    --brand-button-text: #fff;
+    --brand-primary: #0047ab;
+    --brand-secondary: #003a8c;
+    --brand-accent: #c9a35b;
+    --brand-page-background: #f6f8fc;
+    --brand-surface-background: #fff;
 }

@@ -13,7 +13,11 @@ $user = current_user();
 if ($user === null) {
     throw new RuntimeException('An authenticated institution account is required.');
 }
-$institutionId = (int) $user['institution_id'];
+$institutionId = authenticated_institution_id(['super_admin', 'admin', 'staff']);
+if ($institutionId === null) {
+    http_response_code(403);
+    exit('Institution access is unavailable for this account.');
+}
 $errors = [];
 $canCreateAssignment = user_has_compatible_permission('student_fees.create', 'fees.manage');
 $canViewPlans = user_has_compatible_permission('student_fees.view', 'fees.view');

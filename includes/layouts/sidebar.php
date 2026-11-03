@@ -34,7 +34,8 @@ function render_sidebar_nav(string $context = 'admin'): void
             ['Parent reports', '/admin/reports/parent-wise', 'bi-people', 'general_reports.view', 'Reports', 'reports.view'],
             ['Announcements', '/admin/notifications/index', 'bi-megaphone', 'announcements.view', 'Communication', 'notifications.manage'],
             ['Audit log', '/admin/audit/index', 'bi-journal-text', 'audit.view', 'Administration'],
-            ['Institution profile', '/admin/settings/general', 'bi-gear', 'institution_settings.view', 'Administration', 'settings.manage'],
+            ['System Preferences', '/admin/settings/general', 'bi-sliders', 'institution_settings.view', 'Administration', 'settings.manage'],
+            ['Institution profile', '/admin/settings/institution', 'bi-building-gear', 'institution_settings.view', 'Administration', 'settings.manage'],
             ['Payment configuration', '/admin/settings/payment-settings', 'bi-credit-card-2-front', 'institution_settings.view', 'Administration', 'settings.manage'],
         ],
         'parent' => [
@@ -53,6 +54,9 @@ function render_sidebar_nav(string $context = 'admin'): void
         ],
     ];
     $items = $menus[$context] ?? $menus['admin'];
+    if ($context === 'admin' && (current_user()['user_type'] ?? null) === 'super_admin') {
+        $items[] = ['Institutions', '/super-admin/institutions', 'bi-buildings', null, 'Administration'];
+    }
     $currentPath = (string) (parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH) ?: '');
     $basePath = rtrim((string) (parse_url(APP_URL, PHP_URL_PATH) ?: ''), '/');
     if ($basePath !== '' && str_starts_with($currentPath, $basePath . '/')) {
@@ -72,6 +76,7 @@ function render_sidebar_nav(string $context = 'admin'): void
                 <?php [$label, $href, $icon] = array_slice($item, 0, 3); ?>
                 <?php if (isset($item[3]) && !user_has_compatible_permission($item[3], (string) ($item[5] ?? $item[3]))) { continue; } ?>
                 <?php if ($href === '/admin/staff/permissions' && !in_array((current_user()['user_type'] ?? null), ['admin', 'super_admin'], true)) { continue; } ?>
+                <?php if ($href === '/admin/settings/institution' && (current_user()['user_type'] ?? null) === 'super_admin') { continue; } ?>
                 <?php $group = $item[4] ?? ($context === 'parent' ? null : 'Workspace'); ?>
                 <?php if ($group !== $lastGroup): ?><div class="sidebar-heading mt-3"><?php echo e($group); ?></div><?php $lastGroup = $group; ?><?php endif; ?>
                 <a class="nav-link<?php echo $currentPath === $href ? ' active' : ''; ?>" href="<?php echo e(route_url($href)); ?>"<?php echo $currentPath === $href ? ' aria-current="page"' : ''; ?>>

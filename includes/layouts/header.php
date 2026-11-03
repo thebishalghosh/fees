@@ -5,17 +5,17 @@ require_once __DIR__ . '/../../services/institution-branding-service.php';
 require_once __DIR__ . '/../../services/notification-service.php';
 require_once __DIR__ . '/../auth.php';
 
-function render_site_header(string $context = 'public'): void
+function render_site_header(string $context = 'public', ?array $previewBranding = null): void
 {
     $isPublic = str_starts_with($context, 'public');
-    $institutionBranding = null;
+    $institutionBranding = $previewBranding;
     $notificationUnreadCount = 0;
     if (!$isPublic) {
         $user = current_user();
-        if ($user !== null) {
-            $db = db_connect();
-            $institutionBranding = institution_branding_get($db, (int) $user['institution_id']);
+        if ($user !== null && ($user['user_type'] ?? null) !== 'super_admin') {
+            $institutionBranding = institution_branding_get_for_current_user();
             if ($context === 'parent' && $user['user_type'] === 'parent') {
+                $db = db_connect();
                 $notificationUnreadCount = notification_service_unread_count_for_user(
                     $db,
                     (int) $user['institution_id'],
@@ -42,12 +42,25 @@ function render_site_header(string $context = 'public'): void
     ?>
 <nav class="navbar navbar-expand-lg site-navbar<?php echo $isPublic ? ' site-navbar-public' : ' site-navbar-app'; ?>" id="site-nav">
     <div class="container">
-        <a class="navbar-brand site-brand" href="<?php echo e($brandHref); ?>" aria-label="FeesPortal home">
-            <span class="brand-mark" aria-hidden="true"><i class="bi bi-mortarboard-fill"></i></span>
-            <span class="brand-name">FeesPortal<small>Blue Eyes Infosoft</small></span>
+        <a class="navbar-brand site-brand" href="<?php echo e($brandHref); ?>" aria-label="<?php echo e(is_array($institutionBranding) ? $institutionBranding['name'] : 'FeesPortal'); ?>">
+            <?php if (is_array($institutionBranding)
+                && institution_branding_logo_file(is_string($institutionBranding['logo_path'] ?? null) ? $institutionBranding['logo_path'] : null) !== null): ?>
+                <?php
+                $logoVersion = institution_branding_logo_version(
+                    is_string($institutionBranding['logo_path'] ?? null) ? $institutionBranding['logo_path'] : null
+                );
+                $logoUrl = $context === 'public-placeholder'
+                    ? route_url('/institution-logo?institution_code=' . rawurlencode((string) $institutionBranding['code']) . '&v=' . $logoVersion)
+                    : route_url(($context === 'parent' ? '/parent/institution-logo' : '/admin/institution-logo') . '?v=' . $logoVersion);
+                ?>
+                <img class="institution-branding-logo" src="<?php echo e($logoUrl); ?>" alt="">
+            <?php else: ?>
+                <span class="brand-mark" aria-hidden="true"><i class="bi bi-mortarboard-fill"></i></span>
+            <?php endif; ?>
+            <span class="brand-name"><?php echo e(is_array($institutionBranding) ? ($institutionBranding['short_name'] ?: $institutionBranding['name']) : 'FeesPortal'); ?><small><?php echo e(is_array($institutionBranding) ? ($institutionBranding['short_name'] ? $institutionBranding['name'] : 'Institution portal') : 'Blue Eyes Infosoft'); ?></small></span>
         </a>
         <button class="navbar-toggler site-nav-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#site-menu" aria-controls="site-menu" aria-expanded="false" aria-label="Toggle navigation">
-            <span class="navbar-toggler-icon"></span>
+            <i class="bi bi-list" aria-hidden="true"></i>
         </button>
         <div class="collapse navbar-collapse" id="site-menu">
             <ul class="navbar-nav mx-auto">
@@ -74,10 +87,10 @@ function render_site_header(string $context = 'public'): void
                 </div>
             <?php else: ?>
                 <div class="d-flex align-items-center gap-3">
-                    <?php if (is_array($institutionBranding)): ?>
+                    <?php if (is_array($institutionBranding) && !$isPublic): ?>
                         <span class="workspace-label institution-branding-label">
                             <?php if (institution_branding_logo_file(is_string($institutionBranding['logo_path'] ?? null) ? $institutionBranding['logo_path'] : null) !== null): ?>
-                                <img class="institution-branding-logo" src="<?php echo e(route_url($context === 'parent' ? '/parent/institution-logo' : '/admin/institution-logo')); ?>" alt="">
+                                <img class="institution-branding-logo" src="<?php echo e(route_url(($context === 'parent' ? '/parent/institution-logo' : '/admin/institution-logo') . '?v=' . institution_branding_logo_version((string) $institutionBranding['logo_path']))); ?>" alt="">
                             <?php endif; ?>
                             <?php echo e($institutionBranding['name']); ?>
                         </span>

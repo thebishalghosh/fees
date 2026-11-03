@@ -6,14 +6,13 @@ require_once __DIR__ . '/audit-service.php';
 
 function admin_panel_institution_id(): int
 {
-    $user = current_user();
-    if ($user === null
-        || !in_array($user['user_type'], ['super_admin', 'admin', 'staff'], true)
-        || !user_can_access_institution((int) $user['institution_id'])) {
-        throw new RuntimeException('An authenticated institution account is required.');
+    $institutionId = authenticated_institution_id(['super_admin', 'admin', 'staff']);
+    if ($institutionId === null) {
+        http_response_code(403);
+        exit('Institution access is unavailable for this account.');
     }
 
-    return (int) $user['institution_id'];
+    return $institutionId;
 }
 
 function admin_panel_scalar(mysqli $db, int $institutionId, string $query): int|string
@@ -954,9 +953,11 @@ function admin_panel_notifications(mysqli $db, int $institutionId): array
 function admin_panel_institution(mysqli $db, int $institutionId): ?array
 {
     $statement = $db->prepare(
-        'SELECT id, name, short_name, code, email, phone, address_line1, address_line2,
-                logo_path,
-                city, state, postal_code, country, website, status
+        'SELECT id, name, short_name, code, institution_type, email, phone,
+                address_line1, address_line2, city, state, postal_code, country,
+                website, logo_path, principal_name, principal_email, principal_phone,
+                registration_number, affiliation_body, affiliation_number,
+                established_year, currency_code, status, created_at, updated_at
          FROM institutions WHERE id = ? LIMIT 1'
     );
     $statement->bind_param('i', $institutionId);
@@ -1724,6 +1725,42 @@ function admin_panel_set_academic_year_status(
     }
 }
 
+function admin_panel_institution_types(): array
+{
+    return [
+        'school' => 'School',
+        'college' => 'College',
+        'university' => 'University',
+        'coaching_institute' => 'Coaching Institute',
+    ];
+}
+
+function admin_panel_institution_currency_options(): array
+{
+    return [
+        'INR' => 'INR — Indian Rupee',
+        'USD' => 'USD — US Dollar',
+        'EUR' => 'EUR — Euro',
+        'GBP' => 'GBP — Pound Sterling',
+        'CAD' => 'CAD — Canadian Dollar',
+        'AUD' => 'AUD — Australian Dollar',
+        'NZD' => 'NZD — New Zealand Dollar',
+        'SGD' => 'SGD — Singapore Dollar',
+        'AED' => 'AED — UAE Dirham',
+        'SAR' => 'SAR — Saudi Riyal',
+        'BDT' => 'BDT — Bangladeshi Taka',
+        'NPR' => 'NPR — Nepalese Rupee',
+        'LKR' => 'LKR — Sri Lankan Rupee',
+        'PKR' => 'PKR — Pakistani Rupee',
+        'MYR' => 'MYR — Malaysian Ringgit',
+        'THB' => 'THB — Thai Baht',
+        'JPY' => 'JPY — Japanese Yen',
+        'CNY' => 'CNY — Chinese Yuan',
+        'CHF' => 'CHF — Swiss Franc',
+        'ZAR' => 'ZAR — South African Rand',
+    ];
+}
+
 function admin_panel_validate_institution(array $input): array
 {
     $lengths = [
@@ -1739,6 +1776,12 @@ function admin_panel_validate_institution(array $input): array
         'postal_code' => 20,
         'country' => 120,
         'website' => 255,
+        'principal_name' => 150,
+        'principal_email' => 255,
+        'principal_phone' => 30,
+        'registration_number' => 120,
+        'affiliation_body' => 255,
+        'affiliation_number' => 120,
     ];
     $values = [];
     foreach ($lengths as $field => $maxLength) {
@@ -1752,6 +1795,12 @@ function admin_panel_validate_institution(array $input): array
         }
         $values[$field] = $value === '' && !in_array($field, ['name', 'country'], true) ? null : $value;
     }
+    $institutionType = $input['institution_type'] ?? null;
+    if (!is_string($institutionType)
+        || !array_key_exists($institutionType, admin_panel_institution_types())) {
+        throw new InvalidArgumentException('Choose a supported institution type.');
+    }
+    $values['institution_type'] = $institutionType;
     if ($values['name'] === null) {
         throw new InvalidArgumentException('Enter an institution name.');
     }
@@ -1761,11 +1810,45 @@ function admin_panel_validate_institution(array $input): array
     if ($values['email'] !== null && filter_var($values['email'], FILTER_VALIDATE_EMAIL) === false) {
         throw new InvalidArgumentException('Enter a valid institution email address.');
     }
+    if ($values['code'] !== null
+        && preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]{0,49}$/D', $values['code']) !== 1) {
+        throw new InvalidArgumentException('Enter an institution code using letters, numbers, dots, underscores, or hyphens.');
+    }
+    foreach (['phone', 'principal_phone'] as $field) {
+        if ($values[$field] !== null
+            && preg_match('/^[+0-9().\-\s]{1,30}$/D', $values[$field]) !== 1) {
+            throw new InvalidArgumentException('Enter a valid phone number.');
+        }
+    }
+    if ($values['principal_email'] !== null
+        && filter_var($values['principal_email'], FILTER_VALIDATE_EMAIL) === false) {
+        throw new InvalidArgumentException('Enter a valid principal/director email address.');
+    }
     if ($values['website'] !== null
         && (filter_var($values['website'], FILTER_VALIDATE_URL) === false
             || !in_array(strtolower((string) parse_url($values['website'], PHP_URL_SCHEME)), ['http', 'https'], true))) {
         throw new InvalidArgumentException('Enter a valid institution website using HTTP or HTTPS.');
     }
+    $establishedYear = $input['established_year'] ?? '';
+    if (!is_string($establishedYear)) {
+        throw new InvalidArgumentException('Enter a valid established year.');
+    }
+    $establishedYear = trim($establishedYear);
+    if ($establishedYear === '') {
+        $values['established_year'] = null;
+    } else {
+        $year = filter_var($establishedYear, FILTER_VALIDATE_INT);
+        if ($year === false || $year < 1000 || $year > (int) date('Y')) {
+            throw new InvalidArgumentException('Enter a valid established year.');
+        }
+        $values['established_year'] = $year;
+    }
+    $currencyCode = $input['currency_code'] ?? 'INR';
+    if (!is_string($currencyCode)
+        || !array_key_exists(strtoupper(trim($currencyCode)), admin_panel_institution_currency_options())) {
+        throw new InvalidArgumentException('Choose a supported institution currency.');
+    }
+    $values['currency_code'] = strtoupper(trim($currencyCode));
     return $values;
 }
 
@@ -1785,11 +1868,13 @@ function admin_panel_update_institution(
             'UPDATE institutions
              SET name = ?, short_name = ?, code = ?, email = ?, phone = ?,
                  address_line1 = ?, address_line2 = ?, city = ?, state = ?,
-                 postal_code = ?, country = ?, website = ?
+                 postal_code = ?, country = ?, website = ?, institution_type = ?,
+                 principal_name = ?, principal_email = ?, principal_phone = ?,
+                 registration_number = ?, affiliation_body = ?, affiliation_number = ?,
+                 established_year = ?, currency_code = ?
              WHERE id = ?'
         );
-        $statement->bind_param(
-            'ssssssssssssi',
+        $bindValues = [
             $values['name'],
             $values['short_name'],
             $values['code'],
@@ -1802,8 +1887,26 @@ function admin_panel_update_institution(
             $values['postal_code'],
             $values['country'],
             $values['website'],
-            $institutionId
-        );
+            $values['institution_type'],
+            $values['principal_name'],
+            $values['principal_email'],
+            $values['principal_phone'],
+            $values['registration_number'],
+            $values['affiliation_body'],
+            $values['affiliation_number'],
+            $values['established_year'],
+            $values['currency_code'],
+            $institutionId,
+        ];
+        $bindTypes = str_repeat('s', 19) . 'isi';
+        $bindParameters = [$bindTypes];
+        foreach ($bindValues as &$bindValue) {
+            $bindParameters[] = &$bindValue;
+        }
+        unset($bindValue);
+        if (!call_user_func_array([$statement, 'bind_param'], $bindParameters)) {
+            throw new RuntimeException('The institution profile could not bind its update values.');
+        }
         $statement->execute();
         $statement->close();
         $actor = current_user();

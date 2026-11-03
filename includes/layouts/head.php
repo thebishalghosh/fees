@@ -1,10 +1,51 @@
 <?php
 declare(strict_types=1);
 
-function render_page_head(string $title = '', array $pageStyles = []): void
+function render_page_head(
+    string $title = '',
+    array $pageStyles = [],
+    ?array $institutionBranding = null,
+    bool $loginPage = false
+): void
 {
     $appName = (string) app_config()['app_name'];
     $pageTitle = trim($title) !== '' ? $title . ' | ' . $appName : $appName;
+    $brandingSettings = is_array($institutionBranding['branding'] ?? null)
+        ? $institutionBranding['branding']
+        : [];
+    $theme = [];
+    if ($institutionBranding !== null) {
+        $primary = $loginPage
+            ? ($brandingSettings['login_primary_color'] ?? '#0047AB')
+            : ($brandingSettings['brand_primary_color'] ?? '#0047AB');
+        $secondary = $brandingSettings['brand_secondary_color'] ?? '#003A8C';
+        $accent = $brandingSettings['brand_accent_color'] ?? '#C9A35B';
+        $theme = [
+            '--brand-primary' => $primary,
+            '--brand-secondary' => $secondary,
+            '--brand-accent' => $accent,
+            '--brand-page-background' => $brandingSettings['brand_page_background'] ?? '#F6F8FC',
+            '--brand-surface-background' => $brandingSettings['brand_surface_background'] ?? '#FFFFFF',
+            '--cobalt' => $primary,
+            '--cobalt-300' => $primary,
+            '--cobalt-600' => $secondary,
+            '--cobalt-700' => $secondary,
+            '--gold' => $accent,
+            '--gold-soft' => $accent,
+            '--surface' => $brandingSettings['brand_surface_background'] ?? '#FFFFFF',
+            '--cobalt-50' => $loginPage
+                ? ($brandingSettings['login_background_color'] ?? '#F3F7FD')
+                : ($brandingSettings['brand_page_background'] ?? '#F6F8FC'),
+            '--brand-sidebar-background' => $brandingSettings['brand_sidebar_background'] ?? '#FFFFFF',
+            '--brand-sidebar-text' => $brandingSettings['brand_sidebar_text'] ?? '#5B6782',
+            '--brand-header-background' => $brandingSettings['brand_header_background'] ?? '#00183F',
+            '--brand-header-text' => $brandingSettings['brand_header_text'] ?? '#FFFFFF',
+            '--brand-button-background' => $loginPage
+                ? ($brandingSettings['login_primary_color'] ?? '#0047AB')
+                : ($brandingSettings['brand_button_background'] ?? '#0047AB'),
+            '--brand-button-text' => $brandingSettings['brand_button_text'] ?? '#FFFFFF',
+        ];
+    }
     ?>
 <!doctype html>
 <html lang="en">
@@ -27,6 +68,9 @@ function render_page_head(string $title = '', array $pageStyles = []): void
     <?php foreach ($pageStyles as $pageStyle): ?>
         <link href="<?php echo e(APP_URL); ?>/public/assets/css/pages/<?php echo e(basename((string) $pageStyle)); ?>" rel="stylesheet">
     <?php endforeach; ?>
+    <?php if ($theme !== []): ?>
+        <style>:root{<?php foreach ($theme as $property => $value): ?><?php if (is_string($value) && preg_match('/^#[0-9A-Fa-f]{6}$/D', $value) === 1): ?><?php echo e($property); ?>:<?php echo e($value); ?>;<?php endif; ?><?php endforeach; ?>}</style>
+    <?php endif; ?>
 </head>
 <?php
 }

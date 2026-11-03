@@ -7,7 +7,7 @@
     padding: 1.45rem 1.6rem;
     border: 1px solid var(--line);
     border-radius: 18px;
-    background: linear-gradient(110deg, #fff 0%, #f7faff 100%);
+    background: linear-gradient(110deg, var(--brand-surface-background) 0%, color-mix(in srgb, var(--brand-primary) 4%, var(--brand-surface-background)) 100%);
 }
 
 .institution-logo-preview {
@@ -42,10 +42,10 @@
     gap: .4rem;
     width: fit-content;
     padding: .36rem .63rem;
-    border: 1px solid #dbe7fb;
+    border: 1px solid color-mix(in srgb, var(--brand-primary) 18%, var(--brand-surface-background));
     border-radius: 999px;
-    background: #eff5ff;
-    color: var(--cobalt-700);
+    background: color-mix(in srgb, var(--brand-primary) 8%, var(--brand-surface-background));
+    color: var(--brand-secondary);
     font-size: .72rem;
     font-weight: 700;
     letter-spacing: .015em;
@@ -100,7 +100,7 @@
     width: min(48px, 70%);
     min-height: 3px;
     border-radius: 7px 7px 2px 2px;
-    background: linear-gradient(180deg, #77a4ec, #3975d0);
+    background: linear-gradient(180deg, var(--brand-primary), var(--brand-secondary));
 }
 
 .admin-dashboard-bar-column small {
@@ -413,7 +413,7 @@
     min-width: 0;
     border: 1px solid var(--line);
     border-radius: 16px;
-    background: #fff;
+    background: var(--surface);
     box-shadow: 0 5px 18px rgb(22 48 86 / 4%);
 }
 
@@ -438,8 +438,8 @@
     flex: 0 0 auto;
     place-items: center;
     border-radius: 12px;
-    background: #edf3ff;
-    color: var(--cobalt);
+    background: color-mix(in srgb, var(--brand-primary) 9%, var(--brand-surface-background));
+    color: var(--brand-primary);
     font-size: 1.15rem;
 }
 
@@ -536,7 +536,7 @@
 }
 
 .dashboard-period i {
-    color: var(--cobalt);
+    color: var(--brand-primary);
 }
 
 .dashboard-chart-scroll {
@@ -566,12 +566,12 @@
 }
 
 .collection-chart-bar rect {
-    fill: #5c8fe0;
+    fill: var(--brand-primary);
     transition: fill .15s ease;
 }
 
 .collection-chart-bar:nth-of-type(3n) rect {
-    fill: #3975d0;
+    fill: var(--brand-secondary);
 }
 
 .collection-chart-bar:hover rect,

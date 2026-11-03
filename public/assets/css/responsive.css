@@ -12,6 +12,11 @@
         background: rgb(0 24 63 / 97%);
     }
 
+    .site-navbar-app .navbar-collapse {
+        border-color: color-mix(in srgb, var(--brand-header-text) 18%, transparent);
+        background: var(--brand-header-background);
+    }
+
     .site-navbar .nav-link {
         padding: .65rem .2rem;
     }
