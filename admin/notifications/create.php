@@ -27,6 +27,7 @@ if ($announcementId !== null && $announcement === null) {
 $errors = [];
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_valid_csrf_token();
+    require_permission($announcementId === null ? 'announcements.create' : 'announcements.edit');
     $title = $_POST['title'] ?? '';
     $message = $_POST['message'] ?? '';
     $status = $_POST['status'] ?? 'draft';
@@ -37,6 +38,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         || !is_string($publishAt) || !is_string($expiresAt) || !is_array($rawBatchIds)) {
         $errors[] = 'The announcement form contains invalid values.';
     } else {
+        if ($status === 'published') {
+            require_permission('announcements.publish');
+        }
         $batchIds = [];
         foreach ($rawBatchIds as $rawId) {
             $validId = is_string($rawId) ? filter_var($rawId, FILTER_VALIDATE_INT) : false;

@@ -25,7 +25,9 @@ $page = is_int($requestedPage) && $requestedPage > 0 ? $requestedPage : 1;
 $summary = student_management_get_summary($db, $institutionId);
 $result = student_management_list($db, $institutionId, $search, $status, $classId, $batchId, $page);
 $options = student_management_get_options($db, $institutionId);
-$canManage = user_has_permission('students.manage');
+$canCreate = user_has_compatible_permission('students.create', 'students.manage');
+$canManage = user_has_permission('students.edit') || user_has_permission('students.delete')
+    || (($user = current_user()) !== null && ($user['role_is_system'] ?? true) && user_has_permission('students.manage'));
 
 render_app_page_start(
     'Students Management',
@@ -42,7 +44,7 @@ render_app_page_start(
             <li class="breadcrumb-item active" aria-current="page">Students</li>
         </ol>
     </nav>
-    <?php if ($canManage): ?>
+    <?php if ($canCreate): ?>
         <a class="students-add-button" href="<?php echo e(route_url('/admin/students/create')); ?>"><i class="bi bi-plus-lg" aria-hidden="true"></i>Add Student</a>
     <?php endif; ?>
 </div>

@@ -15,7 +15,7 @@ function render_app_page_start(
 {
     render_page_head($title, $pageStyles);
     ?>
-<body class="app-page">
+<body class="app-page<?php echo $context === 'admin' ? ' app-page-admin' : ''; ?>">
 <?php render_site_header($context); ?>
 <div class="app-layout">
     <?php render_sidebar_nav($context); ?>

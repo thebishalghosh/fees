@@ -25,7 +25,9 @@ $requestedPage = filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT);
 $page = $requestedPage === false || $requestedPage < 1 ? 1 : $requestedPage;
 $summary = parent_management_get_summary($db, $institutionId);
 $result = parent_management_list($db, $institutionId, $search, $status, $link, $page);
-$canManage = user_has_permission('parents.manage');
+$canCreate = user_has_compatible_permission('parents.create', 'parents.manage');
+$canManage = user_has_permission('parents.edit') || user_has_permission('parents.delete')
+    || (($user = current_user()) !== null && ($user['role_is_system'] ?? true) && user_has_permission('parents.manage'));
 
 render_app_page_start(
     'Parent Management',
@@ -42,7 +44,7 @@ render_app_page_start(
             <li class="breadcrumb-item active" aria-current="page">Parents</li>
         </ol>
     </nav>
-    <?php if ($canManage): ?>
+    <?php if ($canCreate): ?>
         <a class="btn parents-add-button" href="<?php echo e(route_url('/admin/parents/create')); ?>">
             <i class="bi bi-plus-lg" aria-hidden="true"></i><span>Add Parent</span>
         </a>

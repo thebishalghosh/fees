@@ -134,14 +134,19 @@ if ($allSourcesReadable) {
     $check(is_string($pdfServiceSource)
         && str_contains($pdfServiceSource, "header('Content-Type: application/pdf')"), 'Set the PDF response content type');
 
-    $authSource = file_get_contents(__DIR__ . '/../includes/auth.php');
+    $_SERVER['REQUEST_METHOD'] = 'GET';
+    $admissionPdfPermission = admin_route_permissions(
+        'students/admission-form.php',
+        'students',
+        'admission-form'
+    );
     $schemaSource = file_get_contents(__DIR__ . '/../database/schema.sql');
     $updateStart = strpos($serviceSource, 'function student_management_update(');
     $updateEnd = strpos($serviceSource, 'function student_management_toggle_status(', $updateStart === false ? 0 : $updateStart);
     $updateSource = $updateStart !== false && $updateEnd !== false
         ? substr($serviceSource, $updateStart, $updateEnd - $updateStart)
         : '';
-    $check(is_string($authSource) && str_contains($authSource, "'index', 'view', 'admission-form'"), 'Authorize student PDF access through students.view');
+    $check($admissionPdfPermission === ['students.view', 'students.view'], 'Authorize student PDF access through students.view');
     $check(is_string($schemaSource) && str_contains($schemaSource, 'UNIQUE KEY uq_students_institution_code (institution_id, student_code)'), 'Enforce student ID uniqueness in the database');
     $check($updateSource !== '' && !preg_match('/(?:INSERT|UPDATE|DELETE)\s+(?:INTO\s+)?(?:student_fee_assignments|installments|payments|receipts)/i', $updateSource), 'Keep student profile edits from creating or changing fee or payment records');
 }

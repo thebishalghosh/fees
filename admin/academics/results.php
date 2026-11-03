@@ -55,6 +55,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $search = is_string($_GET['student'] ?? null) ? trim($_GET['student']) : '';
+$canCreateResults = user_has_compatible_permission('results.create', 'academics.manage');
+$canEditResults = user_has_compatible_permission('results.edit', 'academics.manage');
+$canManageResults = $canCreateResults || $canEditResults;
 $roster = examination_results_get_roster($db, $institutionId, (int) $examId, $search);
 render_app_page_start(
     'Enter Examination Results',
@@ -74,27 +77,29 @@ render_app_page_start(
     <div class="alert alert-warning" role="alert">Set maximum marks for this examination before entering results. <a href="<?php echo e(route_url('/admin/academics/examinations') . '?edit=' . (int) $exam['id']); ?>">Edit examination</a></div>
 <?php else: ?>
     <section class="dashboard-panel exam-results-panel">
-        <div class="exam-list-heading"><div><h2>Student marks</h2><p>Leave a mark blank to leave that student unchanged. Maximum: <?php echo e(number_format((float) $exam['max_marks'], 2)); ?>.</p></div></div>
+        <div class="exam-list-heading"><div><h2>Student marks</h2><p><?php echo $canManageResults ? 'Leave a mark blank to leave that student unchanged.' : 'Results are shown in read-only mode.'; ?> Maximum: <?php echo e(number_format((float) $exam['max_marks'], 2)); ?>.</p></div></div>
         <form method="get" action="<?php echo e(route_url('/admin/academics/results')); ?>" class="exam-student-search"><?php echo '<input type="hidden" name="id" value="' . e((string) $examId) . '">'; ?><label><span>Find student</span><input class="form-control" type="search" name="student" value="<?php echo e($search); ?>" placeholder="Name or student ID"></label><button class="btn btn-outline-primary" type="submit"><i class="bi bi-search" aria-hidden="true"></i> Search</button><?php if ($search !== ''): ?><a class="btn btn-link" href="<?php echo e(route_url('/admin/academics/results') . '?id=' . (int) $examId); ?>">Clear</a><?php endif; ?></form>
         <?php if ($roster === []): ?>
             <div class="admin-panel-empty"><i class="bi bi-people" aria-hidden="true"></i><strong>No students found</strong><span>There are no students for this batch and academic session matching your search.</span></div>
         <?php else: ?>
-            <form method="post" action="<?php echo e(route_url('/admin/academics/results')); ?>" class="exam-marks-form">
+            <?php if ($canManageResults): ?><form method="post" action="<?php echo e(route_url('/admin/academics/results')); ?>" class="exam-marks-form">
                 <?php echo csrf_field(); ?><input type="hidden" name="action" value="save_marks"><input type="hidden" name="exam_id" value="<?php echo e((string) $examId); ?>">
+            <?php endif; ?>
                 <div class="table-responsive"><table class="table admin-panel-table align-middle">
                     <thead><tr><th>Student</th><th>Student ID</th><th>Marks / <?php echo e(number_format((float) $exam['max_marks'], 2)); ?></th><th>Percentage</th><th>Result</th></tr></thead>
                     <tbody><?php foreach ($roster as $student): ?>
                         <?php $hasMark = $student['marks_obtained'] !== null; ?>
+                        <?php $canEditStudentResult = $hasMark ? $canEditResults : $canCreateResults; ?>
                         <tr>
                             <td><?php echo e($student['full_name']); ?></td><td><?php echo e($student['student_code']); ?></td>
-                            <td><input class="form-control exam-mark-input" type="number" min="0" max="<?php echo e((string) $exam['max_marks']); ?>" step="0.01" name="marks[<?php echo (int) $student['student_id']; ?>]" value="<?php echo $hasMark ? e((string) $student['marks_obtained']) : ''; ?>" aria-label="Marks for <?php echo e($student['full_name']); ?>"></td>
+                            <td><?php if ($canEditStudentResult): ?><input class="form-control exam-mark-input" type="number" min="0" max="<?php echo e((string) $exam['max_marks']); ?>" step="0.01" name="marks[<?php echo (int) $student['student_id']; ?>]" value="<?php echo $hasMark ? e((string) $student['marks_obtained']) : ''; ?>" aria-label="Marks for <?php echo e($student['full_name']); ?>"><?php else: ?><?php echo $hasMark ? e((string) $student['marks_obtained']) : '—'; ?><?php endif; ?></td>
                             <td><?php echo $hasMark ? e(examination_results_percentage((string) $student['marks_obtained'], (string) $exam['max_marks'])) . '%' : '—'; ?></td>
                             <td><?php echo $hasMark ? 'Recorded' : 'Not entered'; ?></td>
                         </tr>
                     <?php endforeach; ?></tbody>
                 </table></div>
-                <div class="exam-form-actions"><button class="btn btn-cobalt" type="submit"><i class="bi bi-save" aria-hidden="true"></i> Save marks</button><a class="btn btn-outline-secondary" href="<?php echo e(route_url('/admin/academics/examinations')); ?>">Back to examinations</a></div>
-            </form>
+                <div class="exam-form-actions"><?php if ($canManageResults): ?><button class="btn btn-cobalt" type="submit"><i class="bi bi-save" aria-hidden="true"></i> Save marks</button><?php endif; ?><a class="btn btn-outline-secondary" href="<?php echo e(route_url('/admin/academics/examinations')); ?>">Back to examinations</a></div>
+            <?php if ($canManageResults): ?></form><?php endif; ?>
         <?php endif; ?>
     </section>
 <?php endif; ?>

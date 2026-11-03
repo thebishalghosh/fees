@@ -15,6 +15,12 @@ $view = is_string($_GET['view'] ?? null) ? $_GET['view'] : 'mark';
 if (!in_array($view, ['mark', 'history', 'reports'], true)) {
     $view = 'mark';
 }
+$canCreateAttendance = user_has_compatible_permission('attendance.create', 'academics.manage');
+$canEditAttendance = user_has_compatible_permission('attendance.edit', 'academics.manage');
+$canManageAttendance = $canCreateAttendance || $canEditAttendance;
+if (!$canManageAttendance && $view === 'mark') {
+    $view = 'history';
+}
 $today = date('Y-m-d');
 $selectedYear = attendance_parse_id($_GET['academic_year_id'] ?? '0');
 $selectedClass = attendance_parse_id($_GET['class_id'] ?? '0');
@@ -116,6 +122,13 @@ if ($submittedStatuses !== []) {
     }
     unset($student);
 }
+$editableAttendanceStudentIds = [];
+foreach ($roster as $student) {
+    $hasExistingStatus = ($student['attendance_record_id'] ?? null) !== null;
+    if ($hasExistingStatus ? $canEditAttendance : $canCreateAttendance) {
+        $editableAttendanceStudentIds[] = (int) $student['id'];
+    }
+}
 
 $historyFilters = ['class_id' => 0, 'batch_id' => 0, 'student_query' => '', 'date_from' => '', 'date_to' => ''];
 $historyRows = [];
@@ -175,7 +188,7 @@ render_app_page_start(
 <?php foreach ($errors as $error): ?><div class="alert alert-danger attendance-alert" role="alert"><?php echo e($error); ?></div><?php endforeach; ?>
 <nav aria-label="Breadcrumb"><ol class="breadcrumb attendance-breadcrumb"><li class="breadcrumb-item"><a href="<?php echo e(route_url('/admin/dashboard')); ?>">Dashboard</a></li><li class="breadcrumb-item active" aria-current="page">Attendance</li></ol></nav>
 <nav class="attendance-tabs" aria-label="Attendance sections">
-    <a class="<?php echo $view === 'mark' ? 'is-active' : ''; ?>" href="<?php echo e(route_url('/admin/academics/attendance')); ?>"><i class="bi bi-pencil-square" aria-hidden="true"></i>Mark attendance</a>
+    <?php if ($canManageAttendance): ?><a class="<?php echo $view === 'mark' ? 'is-active' : ''; ?>" href="<?php echo e(route_url('/admin/academics/attendance')); ?>"><i class="bi bi-pencil-square" aria-hidden="true"></i>Mark attendance</a><?php endif; ?>
     <a class="<?php echo $view === 'history' ? 'is-active' : ''; ?>" href="<?php echo e(route_url('/admin/academics/attendance') . '?view=history'); ?>"><i class="bi bi-clock-history" aria-hidden="true"></i>History</a>
     <a class="<?php echo $view === 'reports' ? 'is-active' : ''; ?>" href="<?php echo e(route_url('/admin/academics/attendance') . '?view=reports'); ?>"><i class="bi bi-bar-chart-line" aria-hidden="true"></i>Reports</a>
 </nav>
@@ -199,7 +212,7 @@ render_app_page_start(
     <?php if ($roster === []): ?>
         <div class="admin-panel-empty"><i class="bi bi-person-x" aria-hidden="true"></i><strong>No enrolled students found</strong><span>There are no admitted or active students assigned to this batch and academic session for the selected date.</span></div>
     <?php else: ?>
-        <form method="post" action="<?php echo e(route_url('/admin/academics/attendance')); ?>" class="attendance-save-form">
+        <?php if ($editableAttendanceStudentIds !== []): ?><form method="post" action="<?php echo e(route_url('/admin/academics/attendance')); ?>" class="attendance-save-form">
             <?php echo csrf_field(); ?>
             <input type="hidden" name="academic_year_id" value="<?php echo e((string) $selectedYear); ?>">
             <input type="hidden" name="class_id" value="<?php echo e((string) $selectedClass); ?>">
@@ -210,11 +223,12 @@ render_app_page_start(
                 <tbody><?php foreach ($roster as $student): ?><tr>
                     <td><strong><?php echo e($student['full_name']); ?></strong></td>
                     <td><?php echo e($student['student_code']); ?></td>
-                    <td><label class="visually-hidden" for="attendance-<?php echo (int) $student['id']; ?>">Attendance status for <?php echo e($student['full_name']); ?></label><select class="form-select attendance-status-select" id="attendance-<?php echo (int) $student['id']; ?>" name="attendance[<?php echo (int) $student['id']; ?>]" required><option value="">Choose status</option><?php foreach (['present' => 'Present', 'absent' => 'Absent', 'late' => 'Late'] as $status => $label): ?><option value="<?php echo e($status); ?>"<?php echo ($student['attendance_status'] ?? '') === $status ? ' selected' : ''; ?>><?php echo e($label); ?></option><?php endforeach; ?></select></td>
+                    <td><?php if (in_array((int) $student['id'], $editableAttendanceStudentIds, true)): ?><label class="visually-hidden" for="attendance-<?php echo (int) $student['id']; ?>">Attendance status for <?php echo e($student['full_name']); ?></label><select class="form-select attendance-status-select" id="attendance-<?php echo (int) $student['id']; ?>" name="attendance[<?php echo (int) $student['id']; ?>]" required><option value="">Choose status</option><?php foreach (['present' => 'Present', 'absent' => 'Absent', 'late' => 'Late'] as $status => $label): ?><option value="<?php echo e($status); ?>"<?php echo ($student['attendance_status'] ?? '') === $status ? ' selected' : ''; ?>><?php echo e($label); ?></option><?php endforeach; ?></select><?php else: ?><?php echo e(ucfirst((string) ($student['attendance_status'] ?? 'Not recorded'))); ?><?php endif; ?></td>
                 </tr><?php endforeach; ?></tbody>
             </table></div>
             <div class="attendance-form-footer"><span>Saving records or changing an existing status is recorded in the audit log.</span><button class="btn btn-cobalt" type="submit"><i class="bi bi-check2-circle" aria-hidden="true"></i>Save attendance</button></div>
         </form>
+        <?php else: ?><div class="table-responsive"><table class="table attendance-table align-middle"><thead><tr><th scope="col">Student</th><th scope="col">Student ID</th><th scope="col">Status</th></tr></thead><tbody><?php foreach ($roster as $student): ?><tr><td><strong><?php echo e($student['full_name']); ?></strong></td><td><?php echo e($student['student_code']); ?></td><td><?php echo e(ucfirst((string) ($student['attendance_status'] ?? 'Not recorded'))); ?></td></tr><?php endforeach; ?></tbody></table></div><?php endif; ?>
     <?php endif; ?>
 </section>
 <?php endif; ?>

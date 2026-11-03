@@ -7,7 +7,7 @@ require_once __DIR__ . '/../../includes/layouts/page.php';
 require_once __DIR__ . '/../../services/fee-assignment-service.php';
 
 require_http_methods(['GET', 'HEAD', 'POST']);
-require_permission('fees.manage');
+require_permission($_SERVER['REQUEST_METHOD'] === 'POST' ? 'student_fees.create' : 'student_fees.view');
 $db = db_connect();
 $user = current_user();
 if ($user === null) {
@@ -15,6 +15,8 @@ if ($user === null) {
 }
 $institutionId = (int) $user['institution_id'];
 $errors = [];
+$canCreateAssignment = user_has_compatible_permission('student_fees.create', 'fees.manage');
+$canViewPlans = user_has_compatible_permission('student_fees.view', 'fees.view');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_valid_csrf_token();
@@ -62,8 +64,10 @@ render_app_page_start(
 <?php foreach ($errors as $error): ?><div class="alert alert-danger" role="alert"><?php echo e($error); ?></div><?php endforeach; ?>
 <section class="dashboard-panel admin-form-panel mb-4">
     <h2 class="h5">Assign a fee structure</h2>
-    <?php if ($data['students'] === [] || $data['structures'] === [] || $data['plans'] === []): ?>
-        <div class="admin-panel-empty"><i class="bi bi-info-circle" aria-hidden="true"></i><strong>Assignment options are incomplete</strong><span>Add an admitted or active student assigned to an academic year, an active fee structure for the same academic year, and an active monthly or quarterly payment plan for this institution.</span><?php if (user_has_permission('fees.view')): ?><a class="btn btn-outline-primary mt-2" href="<?php echo e(route_url('/admin/fees/payment-plans')); ?>">Manage payment plans</a><?php endif; ?></div>
+    <?php if (!$canCreateAssignment): ?>
+        <div class="admin-panel-empty"><i class="bi bi-shield-lock" aria-hidden="true"></i><strong>Fee assignment is read-only</strong><span>Your account does not have permission to create student fee assignments.</span></div>
+    <?php elseif ($data['students'] === [] || $data['structures'] === [] || $data['plans'] === []): ?>
+        <div class="admin-panel-empty"><i class="bi bi-info-circle" aria-hidden="true"></i><strong>Assignment options are incomplete</strong><span>Add an admitted or active student assigned to an academic year, an active fee structure for the same academic year, and an active monthly or quarterly payment plan for this institution.</span><?php if ($canViewPlans): ?><a class="btn btn-outline-primary mt-2" href="<?php echo e(route_url('/admin/fees/payment-plans')); ?>">Manage payment plans</a><?php endif; ?></div>
     <?php else: ?>
         <form method="post" action="<?php echo e(route_url('/admin/fees/assignments')); ?>" class="admin-form-grid">
             <?php echo csrf_field(); ?>

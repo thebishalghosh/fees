@@ -356,7 +356,8 @@ function attendance_get_students_for_marking(
         throw new InvalidArgumentException('Enter a valid attendance date.');
     }
     $statement = $db->prepare(
-        "SELECT s.id, s.student_code, s.full_name, ar.status AS attendance_status
+        "SELECT s.id, s.student_code, s.full_name, ar.id AS attendance_record_id,
+                ar.status AS attendance_status
          FROM students s
          JOIN batches b ON b.institution_id = s.institution_id AND b.id = s.batch_id
          JOIN classes c ON c.institution_id = b.institution_id AND c.id = b.class_id
@@ -450,6 +451,19 @@ function attendance_save_batch(
         $existingByStudent = [];
         foreach ($existingRows as $row) {
             $existingByStudent[(int) $row['student_id']] = $row;
+        }
+
+        foreach ($values['attendance'] as $studentId => $status) {
+            $old = $existingByStudent[$studentId] ?? null;
+            if (is_array($old) && $old['status'] === $status) {
+                continue;
+            }
+            $requiredPermission = is_array($old) ? 'attendance.edit' : 'attendance.create';
+            if (!user_has_compatible_permission($requiredPermission, 'academics.manage')) {
+                $db->rollback();
+                http_response_code(403);
+                exit('Forbidden.');
+            }
         }
 
         $savedCount = 0;

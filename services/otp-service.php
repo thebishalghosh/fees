@@ -396,7 +396,14 @@ function unique_staff_login_account(array $accounts, string $institutionCode, st
         || ($account['email_verified_at'] ?? null) === null
         || !is_string($role)
         || !in_array($role, ['super_admin', 'admin', 'staff'], true)
-        || ($account['role_name'] ?? null) !== $role) {
+        || !authenticated_role_is_valid(
+            $role,
+            (string) ($account['role_name'] ?? ''),
+            (int) ($account['role_is_system'] ?? 0) === 1,
+            isset($account['role_institution_id']) ? (int) $account['role_institution_id'] : null,
+            (int) ($account['institution_id'] ?? 0),
+            (int) ($account['role_is_active'] ?? 0) === 1
+        )) {
         return null;
     }
 
@@ -407,15 +414,24 @@ function active_staff_login_user(mysqli $db, string $institutionCode, string $em
 {
     $statement = $db->prepare(
         'SELECT u.id, u.institution_id, u.role_id, u.user_type, u.full_name, u.email,
-                u.email_verified_at, u.status, r.name AS role_name,
+                u.email_verified_at, u.status, r.name AS role_name, r.is_system AS role_is_system,
+                r.institution_id AS role_institution_id, r.is_active AS role_is_active,
                 i.code AS institution_code, i.status AS institution_status
          FROM institutions i
          JOIN users u ON u.institution_id = i.id
-         JOIN roles r ON r.id = u.role_id AND r.name = u.user_type
+         JOIN roles r ON r.id = u.role_id AND r.is_active = 1
          WHERE i.code = ? AND i.status = \'active\'
            AND u.email = ? AND u.email_verified_at IS NOT NULL
            AND u.status = \'active\'
            AND u.user_type IN (\'super_admin\', \'admin\', \'staff\')
+           AND (
+               (u.user_type = \'staff\' AND (
+                   (r.is_system = 1 AND r.name = \'staff\' AND r.institution_id IS NULL)
+                   OR (r.is_system = 0 AND r.institution_id = i.id)
+               ))
+               OR (u.user_type IN (\'super_admin\', \'admin\')
+                   AND r.is_system = 1 AND r.name = u.user_type AND r.institution_id IS NULL)
+           )
          LIMIT 2'
     );
     $statement->bind_param('ss', $institutionCode, $email);
@@ -442,6 +458,7 @@ function active_parent_login_account(mysqli $db, string $email): ?array
          FROM institutions i
          JOIN users u ON u.institution_id = i.id
          JOIN roles r ON r.id = u.role_id AND r.name = \'parent\'
+             AND r.is_system = 1 AND r.is_active = 1
          JOIN parents p ON p.institution_id = u.institution_id AND p.user_id = u.id
          WHERE i.status = \'active\'
            AND u.email = ? AND u.email_verified_at IS NOT NULL
@@ -784,11 +801,19 @@ function resend_login_challenge(array $pending): array
             'SELECT u.id, u.institution_id, u.role_id, u.user_type, u.full_name, u.email
              FROM institutions i
              JOIN users u ON u.institution_id = i.id
-             JOIN roles r ON r.id = u.role_id AND r.name = u.user_type
+             JOIN roles r ON r.id = u.role_id AND r.is_active = 1
              WHERE i.id = ? AND i.code = ? AND i.status = \'active\'
                AND u.id = ? AND u.institution_id = ? AND u.email = ?
                AND u.email_verified_at IS NOT NULL AND u.status = \'active\'
                AND u.user_type IN (\'super_admin\', \'admin\', \'staff\')
+               AND (
+                   (u.user_type = \'staff\' AND (
+                       (r.is_system = 1 AND r.name = \'staff\' AND r.institution_id IS NULL)
+                       OR (r.is_system = 0 AND r.institution_id = i.id)
+                   ))
+                   OR (u.user_type IN (\'super_admin\', \'admin\')
+                       AND r.is_system = 1 AND r.name = u.user_type AND r.institution_id IS NULL)
+               )
              LIMIT 2'
         );
         $statement->bind_param('isiis', $institutionId, $institutionCode, $userId, $institutionId, $email);
@@ -939,12 +964,23 @@ function verify_login_challenge(array $pending, string $otp): string
 
         $statement = $db->prepare(
             'SELECT u.id, u.institution_id, u.role_id, u.user_type, u.status,
-                    r.name AS role_name, i.status AS institution_status
+                    r.name AS role_name, r.is_system AS role_is_system,
+                    r.institution_id AS role_institution_id, r.is_active AS role_is_active,
+                    i.status AS institution_status
              FROM users u
              JOIN roles r ON r.id = u.role_id
              JOIN institutions i ON i.id = u.institution_id
              LEFT JOIN parents p ON p.institution_id = u.institution_id AND p.user_id = u.id
              WHERE u.id = ? AND u.institution_id = ?
+               AND r.is_active = 1
+               AND (
+                   (u.user_type = \'staff\' AND (
+                       (r.is_system = 1 AND r.name = \'staff\' AND r.institution_id IS NULL)
+                       OR (r.is_system = 0 AND r.institution_id = u.institution_id)
+                   ))
+                   OR (u.user_type IN (\'super_admin\', \'admin\', \'parent\')
+                       AND r.is_system = 1 AND r.name = u.user_type AND r.institution_id IS NULL)
+               )
                AND (u.user_type <> \'parent\' OR (
                    p.status = \'active\' AND r.name = \'parent\'
                    AND u.email IS NOT NULL AND TRIM(u.email) <> \'\'
@@ -971,7 +1007,15 @@ function verify_login_challenge(array $pending, string $otp): string
         if (!is_array($user)
             || $user['status'] !== 'active'
             || $user['institution_status'] !== 'active'
-            || $user['role_name'] !== $user['user_type']
+            || (int) $user['role_is_active'] !== 1
+            || !authenticated_role_is_valid(
+                (string) $user['user_type'],
+                (string) $user['role_name'],
+                (int) $user['role_is_system'] === 1,
+                $user['role_institution_id'] === null ? null : (int) $user['role_institution_id'],
+                (int) $user['institution_id'],
+                true
+            )
             || !in_array($user['user_type'], ['super_admin', 'admin', 'staff', 'parent'], true)) {
             $challengeId = (int) $challenge['id'];
             $statement = $db->prepare(
@@ -1056,6 +1100,7 @@ function verify_login_challenge(array $pending, string $otp): string
             'institution_id' => $institutionId,
             'role_id' => $roleId,
             'user_type' => (string) $user['user_type'],
+            'role_is_system' => (int) $user['role_is_system'] === 1,
             'status' => 'active',
             'permissions' => $permissions,
         ];

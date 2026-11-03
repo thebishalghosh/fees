@@ -20,8 +20,20 @@ render_app_page_start($adminListTitle, $adminListDescription, 'admin', ['admin-d
 <?php echo render_flash_messages(); ?>
 <nav aria-label="Breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="<?php echo e(route_url('/admin/dashboard')); ?>">Dashboard</a></li><li class="breadcrumb-item active" aria-current="page"><?php echo e($adminListTitle); ?></li></ol></nav>
 <section class="dashboard-panel">
-    <?php $canCreateList = $adminListTable === 'classes' || in_array($adminListTable, ['courses', 'batches'], true) || ($adminListTable === 'fee_structures' && user_has_permission('fees.manage')); ?>
-    <?php $canEditList = in_array($adminListTable, ['courses', 'batches'], true) || ($adminListTable === 'fee_structures' && user_has_permission('fees.manage')); ?>
+    <?php
+    $listPermissions = [
+        'classes' => ['classes.create', '', 'academics.manage'],
+        'courses' => ['courses.create', 'courses.edit', 'courses.manage'],
+        'batches' => ['batches.create', 'batches.edit', 'courses.manage'],
+        'fee_structures' => ['fee_structures.create', 'fee_structures.edit', 'fees.manage'],
+    ];
+    [$createPermission, $editPermission, $legacyPermission] = $listPermissions[$adminListTable]
+        ?? ['', '', ''];
+    $canCreateList = $createPermission !== ''
+        && user_has_compatible_permission($createPermission, $legacyPermission);
+    $canEditList = $editPermission !== ''
+        && user_has_compatible_permission($editPermission, $legacyPermission);
+    ?>
     <?php if ($canCreateList): ?><div class="d-flex justify-content-end mb-3"><a class="btn btn-cobalt" href="<?php echo e(route_url(match ($adminListTable) { 'classes' => '/admin/academics/classes/create', 'courses' => '/admin/courses/create', 'batches' => '/admin/batches/create', default => '/admin/fees/create-structure' })); ?>">Create <?php echo e(match ($adminListTable) { 'classes' => 'class', 'courses' => 'course', 'batches' => 'batch', default => 'fee structure' }); ?></a></div><?php endif; ?>
     <?php if ($rows === []): ?>
         <div class="admin-panel-empty"><i class="bi bi-inbox" aria-hidden="true"></i><strong>No records found</strong><span><?php echo e('No ' . strtolower($adminListTitle) . ' have been added for this institution.'); ?></span></div>

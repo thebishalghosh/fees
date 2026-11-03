@@ -1828,7 +1828,8 @@ function admin_panel_update_institution(
 function admin_panel_staff_accounts(mysqli $db, int $institutionId): array
 {
     $statement = $db->prepare(
-        "SELECT u.id, u.full_name, u.email, u.mobile, u.user_type, u.status, u.last_login_at,
+        "SELECT u.id, u.role_id, u.full_name, u.email, u.mobile, u.user_type, u.status,
+                u.email_verified_at, u.last_login_at,
                 u.created_at, r.name AS role_name, sp.employee_code, sp.designation, sp.department, sp.phone
          FROM users u
          LEFT JOIN roles r ON r.id = u.role_id

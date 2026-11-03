@@ -32,10 +32,18 @@ CREATE TABLE IF NOT EXISTS roles (
     name VARCHAR(80) NOT NULL,
     description VARCHAR(255) NULL,
     is_system TINYINT(1) NOT NULL DEFAULT 0,
+    institution_id BIGINT UNSIGNED NULL,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    system_name VARCHAR(80) GENERATED ALWAYS AS (
+        CASE WHEN is_system = 1 THEN name ELSE NULL END
+    ) STORED,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    UNIQUE KEY uq_roles_name (name)
+    UNIQUE KEY uq_roles_institution_name (institution_id, name),
+    UNIQUE KEY uq_roles_system_name (system_name),
+    KEY idx_roles_institution_active (institution_id, is_active),
+    CONSTRAINT fk_roles_institution FOREIGN KEY (institution_id) REFERENCES institutions(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS permissions (

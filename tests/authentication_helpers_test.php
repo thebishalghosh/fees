@@ -6,6 +6,7 @@ putenv('OTP_HASH_KEY=local-test-key-with-more-than-thirty-two-characters');
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../services/otp-service.php';
+require_once __DIR__ . '/../services/role-management-service.php';
 require_once __DIR__ . '/../includes/layouts/auth.php';
 require_once __DIR__ . '/../includes/layouts/page.php';
 
@@ -86,6 +87,129 @@ $check(user_has_permission('dashboard.view'), 'Allow a granted permission');
 $check(!user_has_permission('payments.refund'), 'Deny an ungranted permission');
 $check(user_can_access_institution(9), 'Allow the session institution');
 $check(!user_can_access_institution(10), 'Deny a different institution');
+$check(
+    authenticated_role_is_valid('staff', 'Class Coordinator', false, 9, 9, true),
+    'Allow institution-scoped custom roles for staff accounts'
+);
+$check(
+    !authenticated_role_is_valid('staff', 'Class Coordinator', false, 10, 9, true),
+    'Reject a custom role owned by another institution'
+);
+$check(
+    !authenticated_role_is_valid('admin', 'Class Coordinator', false, 9, 9, true),
+    'Do not allow a custom role to replace administrator roles'
+);
+$check(
+    !authenticated_role_is_valid('super_admin', 'super_admin', true, null, 9, false),
+    'Reject an inactive protected role'
+);
+$permissionKeys = rbac_permission_keys();
+$check(count($permissionKeys) === count(array_unique($permissionKeys)), 'Keep the permission matrix keys unique');
+$check(in_array('payments.refund', $permissionKeys, true), 'Include payment refund permissions in the catalog');
+$check(in_array('roles.permissions.manage', $permissionKeys, true), 'Include role-permission management in the catalog');
+$check(rbac_role_name_is_valid('Attendance Coordinator'), 'Accept valid custom role names');
+$check(!rbac_role_name_is_valid(' '), 'Reject empty custom role names');
+$check(!rbac_role_name_is_valid(str_repeat('R', 81)), 'Enforce the database role name length');
+$routePermission = admin_route_permissions('students/store.php', 'students', 'store');
+$check($routePermission === ['students.create', 'students.manage'], 'Guard student creation with a granular permission');
+$routePermission = admin_route_permissions('payments/refunds.php', 'payments', 'refunds');
+$check($routePermission === ['payments.refund', 'payments.refund'], 'Keep refund access separate from payment viewing');
+$_SERVER['REQUEST_METHOD'] = 'POST';
+$_GET = [];
+$_POST = ['action' => 'create'];
+$check(
+    admin_route_permissions('academics/years.php', 'academics', 'years') === ['academic_years.create', 'academics.manage'],
+    'Require academic-year creation permission for year creation'
+);
+$check(
+    admin_route_permissions('fees/categories.php', 'fees', 'categories') === ['fee_structures.create', 'fees.manage'],
+    'Require fee-structure creation permission for category creation'
+);
+$_POST = ['action' => 'status'];
+$check(
+    admin_route_permissions('academics/years.php', 'academics', 'years') === ['academic_years.edit', 'academics.manage'],
+    'Require academic-year edit permission for lifecycle changes'
+);
+$check(
+    admin_route_permissions('fees/categories.php', 'fees', 'categories') === ['fee_structures.edit', 'fees.manage'],
+    'Require fee-structure edit permission for category status changes'
+);
+$_POST = ['action' => 'save', 'exam_id' => '0'];
+$check(
+    admin_route_permissions('academics/examinations.php', 'academics', 'examinations') === ['examinations.create', 'academics.manage'],
+    'Require examination creation permission when scheduling an examination'
+);
+$_POST = ['action' => 'save', 'exam_id' => '12'];
+$check(
+    admin_route_permissions('academics/examinations.php', 'academics', 'examinations') === ['examinations.edit', 'academics.manage'],
+    'Require examination edit permission when updating an examination'
+);
+$_POST = ['action' => 'publication', 'exam_id' => '12', 'published' => '0'];
+$check(
+    admin_route_permissions('academics/examinations.php', 'academics', 'examinations') === ['results.publish', 'academics.manage'],
+    'Require publication permission for both publishing and unpublishing results'
+);
+$_POST = ['action' => 'save_marks', 'exam_id' => '12'];
+$check(
+    admin_route_permissions('academics/results.php', 'academics', 'results') === ['results.view', 'academics.manage'],
+    'Require result viewing access to reach the marks page'
+);
+$examinationServiceSource = file_get_contents(__DIR__ . '/../services/examination-results-service.php');
+$check(
+    is_string($examinationServiceSource)
+        && str_contains($examinationServiceSource, "'results.create'")
+        && str_contains($examinationServiceSource, "'results.edit'"),
+    'Enforce separate create and edit permissions for examination marks'
+);
+$_POST = ['action' => 'assign_role', 'user_id' => '42', 'role_id' => '5'];
+$check(
+    admin_route_permissions('staff/index.php', 'staff', 'index') === ['staff.assign_role', 'staff.manage'],
+    'Require staff role-assignment permission for role changes'
+);
+$_POST = ['action' => 'save_permissions', 'role_id' => '5', 'permissions' => []];
+$check(
+    admin_route_permissions('staff/permissions.php', 'staff', 'permissions') === ['roles.permissions.manage', 'staff.manage'],
+    'Require permission-management authorization for permission matrix updates'
+);
+$_POST = ['action' => 'create', 'name' => 'Coordinator'];
+$check(
+    admin_route_permissions('staff/permissions.php', 'staff', 'permissions') === ['roles.create', 'staff.manage'],
+    'Require role-creation authorization for custom role creation'
+);
+$_POST = ['action' => 'update', 'role_id' => '5', 'name' => 'Coordinator'];
+$check(
+    admin_route_permissions('staff/permissions.php', 'staff', 'permissions') === ['roles.edit', 'staff.manage'],
+    'Require role-edit authorization for custom role updates'
+);
+$_POST = ['action' => 'delete', 'role_id' => '5'];
+$check(
+    admin_route_permissions('staff/permissions.php', 'staff', 'permissions') === ['roles.delete', 'staff.manage'],
+    'Require role-deletion authorization for role deletion'
+);
+$_POST = ['name' => 'Annual fees'];
+$check(
+    admin_route_permissions('fees/create-structure.php', 'fees', 'create-structure') === ['fee_structures.create', 'fees.manage'],
+    'Require fee-structure creation permission for the structure form'
+);
+$check(
+    admin_route_permissions('fees/edit-structure.php', 'fees', 'edit-structure') === ['fee_structures.edit', 'fees.manage'],
+    'Require fee-structure edit permission for the edit form'
+);
+$check(
+    admin_route_permissions('fees/assignments.php', 'fees', 'assignments') === ['student_fees.create', 'fees.manage'],
+    'Require student-fee creation permission for new assignments'
+);
+$check(
+    admin_route_permissions('academics/create-class.php', 'academics', 'create-class') === ['classes.create', 'academics.manage'],
+    'Require class creation permission on the class form route'
+);
+$_POST = ['announcement_id' => '9', 'status' => 'draft'];
+$check(
+    admin_route_permissions('notifications/index.php', 'notifications', 'index') === ['announcements.publish', 'notifications.manage'],
+    'Require publication permission when unpublishing an announcement'
+);
+$_SERVER['REQUEST_METHOD'] = 'GET';
+$_POST = [];
 $_SESSION['user']['user_type'] = 'staff';
 $check(authenticated_dashboard_route() === '/admin/dashboard', 'Route staff to the shared authorized admin dashboard');
 $_SESSION['user']['user_type'] = 'parent';
@@ -114,6 +238,17 @@ render_app_page_end('admin');
 $nestedHtml = (string) ob_get_clean();
 $check(str_contains($nestedHtml, APP_URL . '/public/assets/css/base.css'), 'Render nested application assets');
 $check(str_contains($nestedHtml, '/logout'), 'Render the CSRF-protected clean sign-out route');
+$check(str_contains($nestedHtml, '<body class="app-page app-page-admin">'), 'Scope the independent-scroll layout to admin pages');
+
+ob_start();
+render_app_page_start('Parent test', 'Parent layout rendering check.', 'parent');
+render_app_page_end('parent');
+$parentLayoutHtml = (string) ob_get_clean();
+$check(
+    str_contains($parentLayoutHtml, '<body class="app-page">')
+        && !str_contains($parentLayoutHtml, 'app-page-admin'),
+    'Keep parent pages outside the admin-only scrolling layout'
+);
 
 if ($failures !== []) {
     fwrite(STDERR, "FAIL: " . implode('; ', $failures) . PHP_EOL);

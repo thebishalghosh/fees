@@ -56,7 +56,7 @@ render_app_page_start(
             </div>
         </div>
         <div class="parents-detail-actions">
-            <?php if (user_has_permission('parents.manage')): ?>
+            <?php if (user_has_permission('parents.edit') || (($user = current_user()) !== null && ($user['role_is_system'] ?? true) && user_has_permission('parents.manage'))): ?>
                 <a class="parents-submit-button" href="<?php echo e(route_url('/admin/parents/edit') . '?id=' . $parentId); ?>"><i class="bi bi-pencil" aria-hidden="true"></i>Edit Parent</a>
                 <?php if (!$parent['email_verified']): ?>
                     <form action="<?php echo e(route_url('/admin/parents/send-verification')); ?>" method="post">
@@ -143,7 +143,7 @@ render_app_page_start(
         <?php endif; ?>
     </section>
 
-    <?php if (user_has_permission('parents.manage')): ?>
+    <?php if (user_has_permission('parents.edit') || (($user = current_user()) !== null && ($user['role_is_system'] ?? true) && user_has_permission('parents.manage'))): ?>
         <div class="parents-status-control">
             <div>
                 <strong>Parent access</strong>

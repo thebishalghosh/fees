@@ -8,7 +8,7 @@ require_once __DIR__ . '/../../services/fee-assignment-service.php';
 require_once __DIR__ . '/../../services/admin-panel-service.php';
 
 require_http_methods(['GET', 'HEAD', 'POST']);
-require_permission('fees.view');
+require_permission('student_fees.view');
 $user = current_user();
 if ($user === null) {
     throw new RuntimeException('An authenticated institution account is required.');
@@ -17,7 +17,7 @@ $institutionId = (int) $user['institution_id'];
 $errors = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    require_permission('fees.manage');
+    require_permission('student_fees.create');
     require_valid_csrf_token();
     try {
         $values = fee_workflow_validate_plan($_POST);
@@ -56,7 +56,7 @@ render_app_page_start(
 <?php echo render_flash_messages(); ?>
 <nav aria-label="Breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="<?php echo e(route_url('/admin/dashboard')); ?>">Dashboard</a></li><li class="breadcrumb-item active" aria-current="page">Payment plans</li></ol></nav>
 <?php foreach ($errors as $error): ?><div class="alert alert-danger" role="alert"><?php echo e($error); ?></div><?php endforeach; ?>
-<?php if (user_has_permission('fees.manage')): ?>
+<?php if (user_has_permission_compatible('student_fees.create', 'fees.manage')): ?>
 <section class="dashboard-panel admin-form-panel mb-4">
     <h2 class="h5">Create a payment plan</h2>
     <p class="text-muted">Installment amounts are derived equally from the assigned fee total; remainder cents are added to the earliest installments.</p>

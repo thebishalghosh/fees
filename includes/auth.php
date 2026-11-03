@@ -14,6 +14,7 @@ function current_user(): ?array
         || (int) $user['institution_id'] < 1
         || !in_array($user['user_type'], ['super_admin', 'admin', 'staff', 'parent'], true)
         || $user['status'] !== 'active'
+        || (isset($user['role_is_system']) && !is_bool($user['role_is_system']))
         || !is_array($user['permissions'] ?? null)) {
         return null;
     }
@@ -67,7 +68,9 @@ function revalidate_authenticated_session(): bool
     $db = db_connect();
     $statement = $db->prepare(
         'SELECT u.id, u.institution_id, u.role_id, u.user_type, u.full_name, u.status,
-                r.name AS role_name, i.status AS institution_status,
+                r.name AS role_name, r.is_system AS role_is_system,
+                r.institution_id AS role_institution_id, r.is_active AS role_is_active,
+                i.status AS institution_status,
                 us.id AS session_record_id,
                 TIMESTAMPDIFF(SECOND, us.last_activity_at, CURRENT_TIMESTAMP) AS idle_seconds
          FROM user_sessions us
@@ -90,7 +93,14 @@ function revalidate_authenticated_session(): bool
     if (!is_array($record)
         || $record['status'] !== 'active'
         || $record['institution_status'] !== 'active'
-        || $record['role_name'] !== $record['user_type']
+        || !authenticated_role_is_valid(
+            (string) $record['user_type'],
+            (string) $record['role_name'],
+            (int) $record['role_is_system'] === 1,
+            $record['role_institution_id'] === null ? null : (int) $record['role_institution_id'],
+            (int) $record['institution_id'],
+            (int) $record['role_is_active'] === 1
+        )
         || !in_array($record['user_type'], ['super_admin', 'admin', 'staff', 'parent'], true)
         || (int) $record['idle_seconds'] > $idleTimeout) {
         return false;
@@ -127,12 +137,35 @@ function revalidate_authenticated_session(): bool
         'institution_id' => $institutionId,
         'role_id' => $roleId,
         'user_type' => (string) $record['user_type'],
+        'role_is_system' => (int) $record['role_is_system'] === 1,
         'full_name' => (string) $record['full_name'],
         'status' => 'active',
         'permissions' => $permissions,
     ];
 
     return true;
+}
+
+function authenticated_role_is_valid(
+    string $userType,
+    string $roleName,
+    bool $roleIsSystem,
+    ?int $roleInstitutionId,
+    int $userInstitutionId,
+    bool $roleIsActive
+): bool {
+    if (!$roleIsActive || $userInstitutionId < 1) {
+        return false;
+    }
+    if ($userType === 'staff') {
+        return ($roleIsSystem && $roleName === 'staff' && $roleInstitutionId === null)
+            || (!$roleIsSystem && $roleInstitutionId === $userInstitutionId);
+    }
+
+    return in_array($userType, ['super_admin', 'admin', 'parent'], true)
+        && $roleIsSystem
+        && $roleInstitutionId === null
+        && $roleName === $userType;
 }
 
 function require_login(): void
@@ -153,6 +186,17 @@ function require_login(): void
         set_flash('warning', 'Your session has expired. Please sign in again.');
         safe_redirect('/login');
     }
+}
+
+function user_has_compatible_permission(string $permission, string $systemRoleFallback): bool
+{
+    if (user_has_permission($permission)) {
+        return true;
+    }
+    $user = current_user();
+    return $user !== null
+        && ($user['role_is_system'] ?? true)
+        && user_has_permission($systemRoleFallback);
 }
 
 function user_has_permission(string $permission): bool
@@ -350,49 +394,196 @@ function require_placeholder_route_access(): void
         $permission = 'dashboard.view';
     } elseif ($relativePath === 'institution-logo.php') {
         $permission = 'dashboard.view';
-    } elseif (in_array($section, ['parents', 'students', 'admissions'], true)) {
-        $readActions = ['index', 'view', 'admission-form'];
-        $permission = match ($section) {
-            'parents' => in_array($action, $readActions, true) ? 'parents.view' : 'parents.manage',
-            'students' => in_array($action, $readActions, true) ? 'students.view' : 'students.manage',
-            'admissions' => in_array($action, $readActions, true) ? 'admissions.view' : 'admissions.manage',
-        };
-    } elseif (in_array($section, ['courses', 'batches'], true)) {
-        $permission = 'courses.manage';
-    } elseif ($section === 'fees') {
-        $permission = in_array($action, ['categories', 'create-structure', 'edit-structure', 'generate-installments'], true)
-            ? 'fees.manage'
-            : 'fees.view';
-    } elseif ($section === 'payments') {
-        $permission = match ($action) {
-            'reconcile' => 'payments.reconcile',
-            'refunds' => 'payments.refund',
-            default => 'payments.view',
-        };
-    } elseif ($section === 'receipts') {
-        $permission = 'receipts.view';
-    } elseif ($section === 'reports') {
-        $permission = 'reports.view';
-    } elseif ($section === 'academics') {
-        $permission = 'academics.manage';
-    } elseif ($section === 'notifications') {
-        $permission = 'notifications.manage';
-    } elseif ($section === 'settings') {
-        $permission = 'settings.manage';
-    } elseif ($section === 'staff') {
-        $permission = 'staff.manage';
-    } elseif ($section === 'audit') {
-        $permission = 'audit.view';
+    } elseif (in_array($section, ['parents', 'students', 'admissions', 'courses', 'batches', 'fees', 'payments', 'receipts', 'reports', 'academics', 'notifications', 'settings', 'staff', 'audit'], true)) {
+        [$permission, $legacyPermission] = admin_route_permissions($relativePath, $section, $action);
     }
 
     if ($permission === null) {
         http_response_code(403);
         exit('Forbidden.');
     }
-    if (!user_has_permission($permission)) {
+    if (!user_has_compatible_permission($permission, $legacyPermission ?? $permission)) {
         http_response_code(403);
         exit('Forbidden.');
     }
+}
+
+function admin_route_permissions(string $relativePath, string $section, string $action): array
+{
+    $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+    $operation = match (true) {
+        in_array($action, ['store', 'create'], true) => 'create',
+        in_array($action, ['update', 'edit'], true) => 'edit',
+        in_array($action, ['delete', 'remove'], true) => 'delete',
+        $action === 'approve' => 'approve',
+        $action === 'reject' => 'reject',
+        str_contains($action, 'export') => 'export',
+        $action === 'publish' => 'publish',
+        $method === 'POST' => 'edit',
+        default => 'view',
+    };
+
+    if ($section === 'payments') {
+        return match ($action) {
+            'reconcile' => ['payments.reconcile', 'payments.reconcile'],
+            'refunds' => ['payments.refund', 'payments.refund'],
+            'export' => ['payments.export', 'payments.view'],
+            default => ['payments.view', 'payments.view'],
+        };
+    }
+    if ($section === 'reports') {
+        $financial = in_array($action, ['collections', 'outstanding-fees', 'export'], true);
+        $permission = $financial ? 'financial_reports.' . ($action === 'export' ? 'export' : $operation) : 'general_reports.' . ($action === 'export' ? 'export' : $operation);
+        if (!in_array($operation, ['view', 'export'], true)) {
+            $permission = $financial ? 'financial_reports.view' : 'general_reports.view';
+        }
+        return [$permission, 'reports.view'];
+    }
+    if ($section === 'receipts') {
+        return ['receipts.view', 'receipts.view'];
+    }
+    if ($section === 'staff' && $action === 'permissions') {
+        if ($method === 'POST') {
+            $permission = match ($_POST['action'] ?? null) {
+                'create', 'duplicate' => 'roles.create',
+                'update', 'activate', 'deactivate' => 'roles.edit',
+                'delete' => 'roles.delete',
+                'save_permissions' => 'roles.permissions.manage',
+                default => 'roles.view',
+            };
+            return [$permission, 'staff.manage'];
+        }
+        return ['roles.view', 'staff.manage'];
+    }
+    if ($section === 'notifications') {
+        if ($action === 'send') {
+            return ['notifications.view', 'notifications.manage'];
+        }
+        if ($action === 'index' && $method === 'POST') {
+            return ['announcements.publish', 'notifications.manage'];
+        }
+        if ($action === 'create') {
+            $editing = isset($_GET['id']) && filter_var($_GET['id'], FILTER_VALIDATE_INT) !== false;
+            return [$editing ? 'announcements.edit' : 'announcements.create', 'notifications.manage'];
+        }
+    }
+    if ($section === 'academics') {
+        if ($action === 'create-class') {
+            return ['classes.create', 'academics.manage'];
+        }
+        if ($action === 'years' && $method === 'POST') {
+            return (($_POST['action'] ?? null) === 'create')
+                ? ['academic_years.create', 'academics.manage']
+                : ['academic_years.edit', 'academics.manage'];
+        }
+        if ($action === 'attendance' && $method === 'POST') {
+            return ['attendance.view', 'academics.manage'];
+        }
+        if ($action === 'examinations') {
+            if ($method === 'POST') {
+                if (($_POST['action'] ?? null) === 'publication') {
+                    return ['results.publish', 'academics.manage'];
+                }
+                $examId = filter_var($_POST['exam_id'] ?? 0, FILTER_VALIDATE_INT);
+                return $examId !== false && $examId > 0
+                    ? ['examinations.edit', 'academics.manage']
+                    : ['examinations.create', 'academics.manage'];
+            }
+            if (isset($_GET['edit'])) {
+                return ['examinations.edit', 'academics.manage'];
+            }
+        }
+        if ($action === 'results' && $method === 'POST') {
+            return ['results.view', 'academics.manage'];
+        }
+    }
+    if ($section === 'fees' && $action === 'categories' && $method === 'POST') {
+        return (($_POST['action'] ?? null) === 'create')
+            ? ['fee_structures.create', 'fees.manage']
+            : ['fee_structures.edit', 'fees.manage'];
+    }
+    if ($section === 'fees') {
+        if ($action === 'create-structure') {
+            return ['fee_structures.create', 'fees.manage'];
+        }
+        if ($action === 'edit-structure') {
+            return ['fee_structures.edit', 'fees.manage'];
+        }
+        if (in_array($action, ['assignments', 'payment-plans', 'generate-installments'], true)) {
+            $operationPermission = $method === 'POST' || $action === 'generate-installments'
+                ? 'student_fees.create'
+                : 'student_fees.view';
+            return [$operationPermission, 'fees.manage'];
+        }
+    }
+
+    $module = match ($section) {
+        'students' => 'students',
+        'parents' => 'parents',
+        'admissions' => 'admissions',
+        'courses' => 'courses',
+        'batches' => 'batches',
+        'staff' => 'staff',
+        'notifications' => 'announcements',
+        'settings' => 'institution_settings',
+        'audit' => 'audit',
+        'academics' => match ($action) {
+            'years' => 'academic_years',
+            'classes', 'create-class' => 'classes',
+            'attendance' => 'attendance',
+            'examinations' => 'examinations',
+            'results' => 'results',
+            default => 'academic_years',
+        },
+        'fees' => match ($action) {
+            'structures', 'create-structure', 'edit-structure', 'categories' => 'fee_structures',
+            default => 'student_fees',
+        },
+        default => $section,
+    };
+    $mappedOperation = $operation;
+    if ($section === 'fees' && in_array($action, ['categories', 'payment-plans', 'discounts', 'adjustments', 'installments'], true)) {
+        $mappedOperation = $method === 'POST' ? 'edit' : 'view';
+    }
+    if ($section === 'notifications' && $action === 'index' && $method === 'POST') {
+        $mappedOperation = 'edit';
+    }
+    if ($section === 'settings') {
+        $mappedOperation = $method === 'POST' ? 'manage' : 'view';
+    }
+    if ($section === 'staff' && $action === 'index') {
+        if ($method === 'POST') {
+            $mappedOperation = match ($_POST['action'] ?? null) {
+                'create' => 'create',
+                'assign_role' => 'assign_role',
+                default => 'edit',
+            };
+        } elseif (isset($_GET['create'])) {
+            $mappedOperation = 'create';
+        } elseif (isset($_GET['edit'])) {
+            $mappedOperation = 'edit';
+        }
+    }
+    $permission = $module . '.' . $mappedOperation;
+    $legacy = match ($section) {
+        'students' => $operation === 'view' ? 'students.view' : 'students.manage',
+        'parents' => $operation === 'view' ? 'parents.view' : 'parents.manage',
+        'admissions' => $operation === 'view' ? 'admissions.view' : 'admissions.manage',
+        'courses', 'batches' => 'courses.manage',
+        'staff' => 'staff.manage',
+        'notifications' => 'notifications.manage',
+        'settings' => 'settings.manage',
+        'audit' => 'audit.view',
+        'academics' => 'academics.manage',
+        'fees' => in_array($action, ['structures', 'payment-plans', 'discounts', 'installments', 'adjustments'], true)
+            && $operation === 'view' ? 'fees.view' : 'fees.manage',
+        default => $permission,
+    };
+    if ($section === 'audit') {
+        $permission = 'audit.view';
+    }
+
+    return [$permission, $legacy];
 }
 
 function logout_user(): bool

@@ -505,6 +505,41 @@ function examination_results_save_marks(
             throw new DomainException('One or more students do not belong to this examination batch and session.');
         }
 
+        $existing = $db->prepare(
+            "SELECT student_id, marks_obtained FROM examination_results
+             WHERE institution_id = ? AND examination_id = ?
+               AND student_id IN ($placeholders) FOR UPDATE"
+        );
+        $existingValues = [$institutionId, $examId, ...$studentIds];
+        examination_results_bind_params($existing, 'ii' . str_repeat('i', count($studentIds)), $existingValues);
+        $existing->execute();
+        $existingRows = $existing->get_result()->fetch_all(MYSQLI_ASSOC);
+        $existing->close();
+        $existingByStudent = [];
+        foreach ($existingRows as $row) {
+            $existingByStudent[(int) $row['student_id']] = (string) $row['marks_obtained'];
+        }
+        $changed = [];
+        foreach ($normalized as $studentId => $marks) {
+            if (isset($existingByStudent[$studentId])
+                && examination_results_decimal_hundredths($existingByStudent[$studentId])
+                    === examination_results_decimal_hundredths($marks)) {
+                continue;
+            }
+            $requiredPermission = isset($existingByStudent[$studentId]) ? 'results.edit' : 'results.create';
+            if (!user_has_compatible_permission($requiredPermission, 'academics.manage')) {
+                $db->rollback();
+                http_response_code(403);
+                exit('Forbidden.');
+            }
+            $changed[$studentId] = $marks;
+        }
+        if ($changed === []) {
+            $db->commit();
+            return 0;
+        }
+        $normalized = $changed;
+
         $upsert = $db->prepare(
             'INSERT INTO examination_results (
                 institution_id, examination_id, student_id, marks_obtained, recorded_by

@@ -26,6 +26,9 @@ $baseAccount = [
     'email_verified_at' => '2026-01-01 00:00:00',
     'status' => 'active',
     'role_name' => 'admin',
+    'role_is_system' => '1',
+    'role_institution_id' => null,
+    'role_is_active' => '1',
     'institution_code' => '1234',
     'institution_status' => 'active',
 ];
@@ -68,6 +71,21 @@ $check(unique_staff_login_account([$wrongRole], '1234', 'test@test.com') === nul
 $mismatchedRole = $baseAccount;
 $mismatchedRole['role_name'] = 'staff';
 $check(unique_staff_login_account([$mismatchedRole], '1234', 'test@test.com') === null, 'Reject role mapping mismatch');
+$customStaffAccount = $baseAccount;
+$customStaffAccount['user_type'] = 'staff';
+$customStaffAccount['role_name'] = 'Class Coordinator';
+$customStaffAccount['role_is_system'] = '0';
+$customStaffAccount['role_institution_id'] = '12';
+$check(
+    unique_staff_login_account([$customStaffAccount], '1234', 'test@test.com') === $customStaffAccount,
+    'Accept an institution-scoped custom role for staff OTP login'
+);
+$foreignCustomRole = $customStaffAccount;
+$foreignCustomRole['role_institution_id'] = '13';
+$check(
+    unique_staff_login_account([$foreignCustomRole], '1234', 'test@test.com') === null,
+    'Reject a custom staff role owned by another institution'
+);
 $check(unique_staff_login_account([$baseAccount, $baseAccount], '1234', 'test@test.com') === null, 'Reject ambiguous staff account resolution');
 
 $invalidInstitution = begin_staff_email_challenge('../1234', 'test@test.com');

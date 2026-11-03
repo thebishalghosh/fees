@@ -81,3 +81,30 @@ php tests/attendance_management_test.php
 
 The parent attendance page remains unavailable; this release adds admin
 attendance management only.
+
+## Staff roles and permissions
+
+The Staff → Role Permissions page manages institution-scoped custom roles using
+the existing `roles`, `permissions`, `role_permissions`, and `users.role_id`
+tables. Canonical Super Admin, Admin, Staff, and Parent roles remain protected;
+custom roles can only be assigned to staff accounts in the same institution.
+Changes are audited, take effect on the staff member's next request, and cannot
+delete or deactivate an assigned role.
+
+For an existing development or test database, back it up and review existing
+role records before applying `database/migrations/20261102_add_rbac_management.sql`.
+The migration adds institution scope and active status to roles and seeds the
+granular permission catalog. The matching `.down.sql` refuses to remove custom
+roles. Do not apply either migration to a production database from this change.
+Fresh installations should use the updated `database/schema.sql` and
+`database/seed.sql` instead of applying the migration on top.
+
+Run the focused checks with:
+
+```text
+php tests/authentication_helpers_test.php
+php tests/staff_email_authentication_test.php
+php tests/admin_password_authentication_test.php
+php tests/parent_email_authentication_test.php
+php tests/admin_panel_test.php
+```

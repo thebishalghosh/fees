@@ -40,11 +40,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 $years = admin_panel_simple_list($db, $institutionId, 'academic_years');
+$canCreateYear = user_has_compatible_permission('academic_years.create', 'academics.manage');
+$canEditYear = user_has_compatible_permission('academic_years.edit', 'academics.manage');
 render_app_page_start('Academic Years', 'Create draft academic years and manage their lifecycle without deleting historical references.', 'admin', ['admin-dashboard.css']);
 ?>
 <?php echo render_flash_messages(); ?>
 <?php foreach ($errors as $error): ?><div class="alert alert-danger" role="alert"><?php echo e($error); ?></div><?php endforeach; ?>
-<section class="dashboard-panel admin-form-panel">
+<?php if ($canCreateYear): ?><section class="dashboard-panel admin-form-panel">
     <h2 class="h5">Add academic year</h2>
     <form method="post" action="<?php echo e(route_url('/admin/academics/years')); ?>" class="admin-form-grid">
         <?php echo csrf_field(); ?><input type="hidden" name="action" value="create">
@@ -54,10 +56,11 @@ render_app_page_start('Academic Years', 'Create draft academic years and manage 
         <div class="admin-form-actions"><button class="btn btn-cobalt" type="submit">Create draft year</button></div>
     </form>
 </section>
+<?php endif; ?>
 <section class="dashboard-panel">
     <?php if ($years === []): ?><div class="admin-panel-empty"><strong>No academic years</strong><span>Create a draft year to configure course fee structures.</span></div><?php else: ?>
         <div class="table-responsive"><table class="table admin-panel-table"><thead><tr><th>Name</th><th>Starts</th><th>Ends</th><th>Status</th><th>Action</th></tr></thead><tbody>
-            <?php foreach ($years as $year): ?><tr><td><?php echo e((string) $year['name']); ?></td><td><?php echo e((string) $year['start_date']); ?></td><td><?php echo e((string) $year['end_date']); ?></td><td><?php echo e(ucfirst((string) $year['status'])); ?></td><td><?php if ($year['status'] === 'draft'): ?><form method="post" action="<?php echo e(route_url('/admin/academics/years')); ?>"><?php echo csrf_field(); ?><input type="hidden" name="action" value="status"><input type="hidden" name="year_id" value="<?php echo e((string) $year['id']); ?>"><input type="hidden" name="status" value="active"><button class="btn btn-sm btn-outline-primary" type="submit">Activate</button></form><?php elseif ($year['status'] === 'active'): ?><form method="post" action="<?php echo e(route_url('/admin/academics/years')); ?>"><?php echo csrf_field(); ?><input type="hidden" name="action" value="status"><input type="hidden" name="year_id" value="<?php echo e((string) $year['id']); ?>"><input type="hidden" name="status" value="closed"><button class="btn btn-sm btn-outline-secondary" type="submit">Close</button></form><?php else: ?><span class="text-muted">Locked</span><?php endif; ?></td></tr><?php endforeach; ?>
+            <?php foreach ($years as $year): ?><tr><td><?php echo e((string) $year['name']); ?></td><td><?php echo e((string) $year['start_date']); ?></td><td><?php echo e((string) $year['end_date']); ?></td><td><?php echo e(ucfirst((string) $year['status'])); ?></td><td><?php if (!$canEditYear): ?><span class="text-muted">—</span><?php elseif ($year['status'] === 'draft'): ?><form method="post" action="<?php echo e(route_url('/admin/academics/years')); ?>"><?php echo csrf_field(); ?><input type="hidden" name="action" value="status"><input type="hidden" name="year_id" value="<?php echo e((string) $year['id']); ?>"><input type="hidden" name="status" value="active"><button class="btn btn-sm btn-outline-primary" type="submit">Activate</button></form><?php elseif ($year['status'] === 'active'): ?><form method="post" action="<?php echo e(route_url('/admin/academics/years')); ?>"><?php echo csrf_field(); ?><input type="hidden" name="action" value="status"><input type="hidden" name="year_id" value="<?php echo e((string) $year['id']); ?>"><input type="hidden" name="status" value="closed"><button class="btn btn-sm btn-outline-secondary" type="submit">Close</button></form><?php else: ?><span class="text-muted">Locked</span><?php endif; ?></td></tr><?php endforeach; ?>
         </tbody></table></div>
     <?php endif; ?>
 </section>

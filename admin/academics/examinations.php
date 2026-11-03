@@ -82,6 +82,15 @@ if ($filters['academic_year_id'] === false || $filters['academic_year_id'] < 1) 
     $filters['academic_year_id'] = 0;
 }
 $exams = examination_results_list_exams($db, $institutionId, $filters);
+$canCreateExam = user_has_compatible_permission('examinations.create', 'academics.manage');
+$canEditExam = user_has_compatible_permission('examinations.edit', 'academics.manage');
+$canPublishResults = user_has_compatible_permission('results.publish', 'academics.manage');
+$canViewResults = user_has_compatible_permission('results.view', 'academics.manage');
+$postedExamId = $_SERVER['REQUEST_METHOD'] === 'POST'
+    ? filter_var($_POST['exam_id'] ?? 0, FILTER_VALIDATE_INT)
+    : 0;
+$editingExamForm = is_array($editExam) || ($postedExamId !== false && $postedExamId > 0);
+$canShowExamForm = $editingExamForm ? $canEditExam : $canCreateExam;
 
 render_app_page_start(
     'Examinations & Results',
@@ -93,8 +102,8 @@ render_app_page_start(
 <?php echo render_flash_messages(); ?>
 <?php foreach ($errors as $error): ?><div class="alert alert-danger" role="alert"><?php echo e($error); ?></div><?php endforeach; ?>
 <nav aria-label="Breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="<?php echo e(route_url('/admin/dashboard')); ?>">Dashboard</a></li><li class="breadcrumb-item active" aria-current="page">Examinations</li></ol></nav>
-<section class="dashboard-panel exam-admin-form-panel">
-    <div class="exam-section-heading"><div><span class="exam-section-kicker">Academic management</span><h2><?php echo is_array($editExam) ? 'Update examination' : 'Schedule an examination'; ?></h2><p>Examinations are linked to an institution batch and academic session.</p></div></div>
+<?php if ($canShowExamForm): ?><section class="dashboard-panel exam-admin-form-panel">
+    <div class="exam-section-heading"><div><span class="exam-section-kicker">Academic management</span><h2><?php echo $editingExamForm ? 'Update examination' : 'Schedule an examination'; ?></h2><p>Examinations are linked to an institution batch and academic session.</p></div></div>
     <?php if ($years === [] || $batches === []): ?>
         <div class="exam-empty-note"><i class="bi bi-info-circle" aria-hidden="true"></i><span>Add an active academic session and batch before scheduling an examination.</span></div>
     <?php else: ?>
@@ -114,10 +123,11 @@ render_app_page_start(
             <label class="exam-field"><span>Examination date</span><input class="form-control" type="date" name="exam_date" required value="<?php echo e(is_string($formValues['exam_date'] ?? null) ? $formValues['exam_date'] : ''); ?>"></label>
             <label class="exam-field"><span>Maximum marks</span><input class="form-control" type="number" name="max_marks" min="0.01" max="999999.99" step="0.01" required value="<?php echo e(is_string($formValues['max_marks'] ?? null) ? $formValues['max_marks'] : ''); ?>"></label>
             <label class="exam-field exam-field-wide"><span>Description <small>Optional</small></span><textarea class="form-control" name="description" rows="3" maxlength="5000"><?php echo e(is_string($formValues['description'] ?? null) ? $formValues['description'] : ''); ?></textarea></label>
-            <div class="exam-form-actions"><button class="btn btn-cobalt" type="submit"><i class="bi bi-check2-circle" aria-hidden="true"></i><?php echo is_array($editExam) ? 'Update examination' : 'Create examination'; ?></button><?php if (is_array($editExam)): ?><a class="btn btn-outline-secondary" href="<?php echo e(route_url('/admin/academics/examinations')); ?>">Cancel edit</a><?php endif; ?></div>
+            <div class="exam-form-actions"><button class="btn btn-cobalt" type="submit"><i class="bi bi-check2-circle" aria-hidden="true"></i><?php echo $editingExamForm ? 'Update examination' : 'Create examination'; ?></button><?php if ($editingExamForm): ?><a class="btn btn-outline-secondary" href="<?php echo e(route_url('/admin/academics/examinations')); ?>">Cancel edit</a><?php endif; ?></div>
         </form>
     <?php endif; ?>
 </section>
+<?php endif; ?>
 
 <section class="dashboard-panel exam-list-panel">
     <div class="exam-list-heading"><div><h2>Scheduled examinations</h2><p>Search by examination or student; narrow the list by class and academic session.</p></div></div>
@@ -140,7 +150,7 @@ render_app_page_start(
                     <td><?php echo e(date('j M Y', strtotime((string) $exam['exam_date']))); ?></td>
                     <td><?php echo $exam['max_marks'] === null ? '—' : e(number_format((float) $exam['max_marks'], 2)); ?></td>
                     <td><span class="exam-publication-badge<?php echo $exam['results_published_at'] !== null ? ' is-published' : ''; ?>"><?php echo $exam['results_published_at'] !== null ? 'Published' : 'Unpublished'; ?></span><small class="exam-result-count"><?php echo e((string) $exam['result_count']); ?> entered</small></td>
-                    <td><div class="exam-row-actions"><a class="btn btn-sm btn-outline-primary" href="<?php echo e(route_url('/admin/academics/results') . '?id=' . (int) $exam['id']); ?>">Enter marks</a><a class="btn btn-sm btn-outline-secondary" href="<?php echo e(route_url('/admin/academics/examinations') . '?edit=' . (int) $exam['id']); ?>">Edit</a><form method="post" action="<?php echo e(route_url('/admin/academics/examinations')); ?>"><?php echo csrf_field(); ?><input type="hidden" name="action" value="publication"><input type="hidden" name="exam_id" value="<?php echo e((string) $exam['id']); ?>"><input type="hidden" name="published" value="<?php echo $exam['results_published_at'] !== null ? '0' : '1'; ?>"><button class="btn btn-sm <?php echo $exam['results_published_at'] !== null ? 'btn-outline-danger' : 'btn-outline-success'; ?>" type="submit"><?php echo $exam['results_published_at'] !== null ? 'Unpublish' : 'Publish'; ?></button></form></div></td>
+                    <td><div class="exam-row-actions"><?php if ($canViewResults): ?><a class="btn btn-sm btn-outline-primary" href="<?php echo e(route_url('/admin/academics/results') . '?id=' . (int) $exam['id']); ?>">Enter marks</a><?php endif; ?><?php if ($canEditExam): ?><a class="btn btn-sm btn-outline-secondary" href="<?php echo e(route_url('/admin/academics/examinations') . '?edit=' . (int) $exam['id']); ?>">Edit</a><?php endif; ?><?php if ($canPublishResults): ?><form method="post" action="<?php echo e(route_url('/admin/academics/examinations')); ?>"><?php echo csrf_field(); ?><input type="hidden" name="action" value="publication"><input type="hidden" name="exam_id" value="<?php echo e((string) $exam['id']); ?>"><input type="hidden" name="published" value="<?php echo $exam['results_published_at'] !== null ? '0' : '1'; ?>"><button class="btn btn-sm <?php echo $exam['results_published_at'] !== null ? 'btn-outline-danger' : 'btn-outline-success'; ?>" type="submit"><?php echo $exam['results_published_at'] !== null ? 'Unpublish' : 'Publish'; ?></button></form><?php endif; ?></div></td>
                 </tr>
             <?php endforeach; ?></tbody>
         </table></div>

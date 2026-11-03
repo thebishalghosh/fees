@@ -9,6 +9,7 @@ require_placeholder_route_access();
 $institutionId = admin_panel_institution_id();
 $data = admin_panel_dashboard_data(db_connect(), $institutionId, user_has_permission('payments.view'));
 $counts = $data['counts'];
+$canViewFinancialSummary = user_has_compatible_permission('financial_reports.view', 'reports.view');
 
 $cards = [
     ['Active students', number_format((int) $counts['active_students']), 'bi-people', 'students'],
@@ -19,10 +20,15 @@ $cards = [
     ['Outstanding balance', '₹' . number_format((float) $counts['outstanding_balance'], 2), 'bi-hourglass-split', 'pending'],
     ['Overdue dues', '₹' . number_format((float) $counts['overdue_balance'], 2), 'bi-calendar-x', 'overdue'],
 ];
+if (!$canViewFinancialSummary) {
+    $cards = array_slice($cards, 0, 3);
+}
 
 render_app_page_start(
     'Dashboard',
-    'Institution-scoped enrollment and fee activity from your current records.',
+    $canViewFinancialSummary
+        ? 'Institution-scoped enrollment and fee activity from your current records.'
+        : 'Institution-scoped enrollment activity from your current records.',
     'admin',
     ['admin-dashboard.css']
 );
@@ -48,7 +54,7 @@ render_app_page_start(
 </section>
 
 <section class="dashboard-chart-grid" aria-label="Fee collection and pending actions">
-    <article class="dashboard-panel collection-panel">
+    <?php if ($canViewFinancialSummary): ?><article class="dashboard-panel collection-panel">
         <div class="dashboard-panel-heading"><div><span class="dashboard-section-kicker">VERIFIED COLLECTIONS</span><h2>Monthly Net Collections</h2><p>Last six months; processed refunds subtracted from verified payments.</p></div><span class="dashboard-period"><i class="bi bi-calendar3" aria-hidden="true"></i>6 months</span></div>
         <?php if ($data['month_max'] <= 0): ?>
             <div class="admin-panel-empty"><i class="bi bi-bar-chart" aria-hidden="true"></i><strong>No verified collections in this period</strong><span>Verified payment activity will appear here.</span></div>
@@ -67,6 +73,7 @@ render_app_page_start(
         <?php endif; ?>
         <div class="chart-footnote"><span class="chart-key" aria-hidden="true"></span> Net verified payment amount <span>· INR value display</span></div>
     </article>
+    <?php endif; ?>
     <article class="dashboard-panel payment-status-panel">
         <div class="dashboard-panel-heading"><div><span class="dashboard-section-kicker">REQUIRES REVIEW</span><h2>Pending payment actions</h2><p>Records remain pending until normal verification or review.</p></div></div>
         <div class="admin-pending-action-list">
@@ -96,12 +103,12 @@ render_app_page_start(
 
 <section class="admin-quick-links" aria-label="Quick links">
     <?php foreach ([
-        ['Students', '/admin/students/index', 'bi-people', 'students.view'],
-        ['Parents', '/admin/parents/index', 'bi-person-hearts', 'parents.view'],
-        ['Fee structures', '/admin/fees/structures', 'bi-cash-stack', 'fees.view'],
-        ['Reports', '/admin/reports/collections', 'bi-bar-chart', 'reports.view'],
-    ] as [$label, $url, $icon, $permission]): ?>
-        <?php if (user_has_permission($permission)): ?><a href="<?php echo e(route_url($url)); ?>"><i class="bi <?php echo e($icon); ?>" aria-hidden="true"></i><span><?php echo e($label); ?></span><i class="bi bi-arrow-up-right ms-auto" aria-hidden="true"></i></a><?php endif; ?>
+        ['Students', '/admin/students/index', 'bi-people', 'students.view', 'students.manage'],
+        ['Parents', '/admin/parents/index', 'bi-person-hearts', 'parents.view', 'parents.manage'],
+        ['Fee structures', '/admin/fees/structures', 'bi-cash-stack', 'fee_structures.view', 'fees.view'],
+        ['Reports', '/admin/reports/collections', 'bi-bar-chart', 'financial_reports.view', 'reports.view'],
+    ] as [$label, $url, $icon, $permission, $legacyPermission]): ?>
+        <?php if (user_has_compatible_permission($permission, $legacyPermission)): ?><a href="<?php echo e(route_url($url)); ?>"><i class="bi <?php echo e($icon); ?>" aria-hidden="true"></i><span><?php echo e($label); ?></span><i class="bi bi-arrow-up-right ms-auto" aria-hidden="true"></i></a><?php endif; ?>
     <?php endforeach; ?>
 </section>
 <?php render_app_page_end('admin'); ?>

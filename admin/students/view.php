@@ -17,7 +17,8 @@ if ($student === null) {
     http_response_code(404);
     exit('Student not found.');
 }
-$canManage = user_has_permission('students.manage');
+$canManage = user_has_permission('students.edit') || user_has_permission('students.delete')
+    || (($user = current_user()) !== null && ($user['role_is_system'] ?? true) && user_has_permission('students.manage'));
 $statusClass = in_array($student['status'], ['active', 'admitted', 'prospect'], true)
     ? $student['status']
     : 'inactive';

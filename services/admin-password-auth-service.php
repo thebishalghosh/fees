@@ -56,13 +56,14 @@ function admin_auth_password_login(mysqli $db, string $identifier, string $passw
     try {
         $statement = $db->prepare(
             "SELECT u.id, u.institution_id, u.role_id, u.user_type, u.password_hash,
-                    u.status, r.name AS role_name, i.status AS institution_status
+                    u.status, r.name AS role_name, r.is_system AS role_is_system,
+                    r.is_active AS role_is_active, i.status AS institution_status
              FROM users u
              JOIN roles r ON r.id = u.role_id
              JOIN institutions i ON i.id = u.institution_id
              WHERE (u.username = ? OR u.email = ?)
                AND u.user_type IN ('super_admin','admin')
-               AND r.name = u.user_type
+               AND r.name = u.user_type AND r.is_system = 1 AND r.is_active = 1
              LIMIT 2
              FOR UPDATE"
         );
@@ -145,6 +146,7 @@ function admin_auth_password_login(mysqli $db, string $identifier, string $passw
             'institution_id' => $institutionId,
             'role_id' => $roleId,
             'user_type' => (string) $account['user_type'],
+            'role_is_system' => true,
             'status' => 'active',
             'permissions' => $permissions,
         ];

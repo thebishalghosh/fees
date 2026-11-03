@@ -48,6 +48,8 @@ $mandatoryCategoryCount = count(array_filter(
     $categories,
     static fn(array $category): bool => (int) ($category['is_mandatory'] ?? 0) === 1
 ));
+$canCreateCategory = user_has_compatible_permission('fee_structures.create', 'fees.manage');
+$canEditCategory = user_has_compatible_permission('fee_structures.edit', 'fees.manage');
 render_app_page_start('Fee Categories', 'Create and deactivate categories without deleting fee history.', 'admin', ['admin-dashboard.css', 'admin-fee-categories.css']);
 ?>
 <?php echo render_flash_messages(); ?>
@@ -67,6 +69,7 @@ render_app_page_start('Fee Categories', 'Create and deactivate categories withou
     </article>
 </section>
 <div class="fee-category-layout">
+    <?php if ($canCreateCategory): ?>
     <section class="dashboard-panel fee-category-form-panel" aria-labelledby="fee-category-form-title">
         <div class="fee-category-panel-heading">
             <span class="fee-category-panel-icon"><i class="bi bi-plus-lg" aria-hidden="true"></i></span>
@@ -96,6 +99,7 @@ render_app_page_start('Fee Categories', 'Create and deactivate categories withou
             <button class="btn btn-cobalt fee-category-submit" type="submit"><i class="bi bi-plus-lg" aria-hidden="true"></i>Create category</button>
         </form>
     </section>
+    <?php endif; ?>
     <section class="dashboard-panel fee-category-list-panel" aria-labelledby="fee-category-list-title">
         <div class="fee-category-list-heading">
             <div>
@@ -126,6 +130,7 @@ render_app_page_start('Fee Categories', 'Create and deactivate categories withou
                                 <td><span class="fee-category-status<?php echo $categoryIsActive ? ' is-active' : ' is-inactive'; ?>"><?php echo e(ucfirst((string) $category['status'])); ?></span></td>
                                 <td><?php echo e((string) $category['created_at']); ?></td>
                                 <td>
+                                    <?php if ($canEditCategory): ?>
                                     <form method="post" action="<?php echo e(route_url('/admin/fees/categories')); ?>">
                                         <?php echo csrf_field(); ?>
                                         <input type="hidden" name="action" value="status">
@@ -135,6 +140,7 @@ render_app_page_start('Fee Categories', 'Create and deactivate categories withou
                                             <?php echo $categoryIsActive ? 'Deactivate' : 'Activate'; ?>
                                         </button>
                                     </form>
+                                    <?php else: ?><span class="text-muted">—</span><?php endif; ?>
                                 </td>
                             </tr>
                         <?php endforeach; ?>

@@ -241,6 +241,51 @@
     background: #f6f8fc;
 }
 
+@media (min-width: 992px) {
+    .app-page-admin {
+        display: flex;
+        height: 100vh;
+        height: 100dvh;
+        min-height: 0;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .app-page-admin > .site-navbar-app,
+    .app-page-admin > .site-footer-app {
+        flex: 0 0 auto;
+    }
+
+    .app-page-admin > .site-footer-app {
+        margin-top: 0;
+    }
+
+    .app-page-admin > .app-layout {
+        min-height: 0;
+        flex: 1 1 auto;
+    }
+
+    .app-page-admin .app-sidebar {
+        height: 100%;
+        min-height: 0;
+        overflow-x: hidden;
+        overflow-y: auto;
+        overscroll-behavior-y: contain;
+    }
+
+    .app-page-admin .app-sidebar .offcanvas-body {
+        min-height: 100%;
+        overflow: visible;
+    }
+
+    .app-page-admin .app-main {
+        min-height: 0;
+        overflow-x: hidden;
+        overflow-y: auto;
+        overscroll-behavior-y: contain;
+    }
+}
+
 .public-placeholder {
     min-height: 100vh;
     background:

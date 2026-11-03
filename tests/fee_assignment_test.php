@@ -103,7 +103,8 @@ if ($validSources) {
         'Scope assignment and generation lookups to the institution and lock the assignment'
     );
     $check(
-        str_contains($assignmentPage, "require_permission('fees.manage')")
+        str_contains($assignmentPage, "require_permission(\$_SERVER['REQUEST_METHOD'] === 'POST' ? 'student_fees.create' : 'student_fees.view')")
+            && str_contains($generationRoute, "require_permission('student_fees.create')")
             && str_contains($generationRoute, "require_http_methods(['POST'])")
             && str_contains($generationRoute, 'require_valid_csrf_token()'),
         'Require fee-management permission, POST, and CSRF protection for changes'
