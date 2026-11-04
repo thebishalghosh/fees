@@ -99,7 +99,7 @@ function admin_auth_password_login(mysqli $db, string $identifier, string $passw
         );
         $statement->close();
 
-        regenerate_session_id();
+        prepare_identity_session($db, 'institution_user');
         $sessionIdentifier = bin2hex(random_bytes(16));
         $sessionTokenHash = hash('sha256', session_id());
         $userAgent = substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 512);

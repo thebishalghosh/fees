@@ -80,6 +80,12 @@ function authenticated_dashboard_route(): string
 
 function revalidate_authenticated_session(): bool
 {
+    if (isset($_SESSION['platform_admin'])
+        || isset($_SESSION['platform_admin_session_id'])
+        || isset($_SESSION['platform_admin_session_token'])) {
+        return false;
+    }
+
     if (!is_authenticated()) {
         return false;
     }
@@ -734,4 +740,839 @@ function logout_user(): bool
 
     clear_app_session();
     return $revoked;
+}
+
+function platform_admin_normalize_email(string $email): string
+{
+    return strtolower(trim($email));
+}
+
+function platform_admin_session_token_hash(string $token): string
+{
+    return hash('sha256', $token);
+}
+
+function platform_admin_permission_catalog(): array
+{
+    return [
+        'institutions.view',
+        'institutions.create',
+        'institutions.update',
+        'institutions.suspend',
+        'platform_admins.manage',
+        'platform_permissions.manage',
+        'platform_audit.view',
+        'institution_support.read',
+    ];
+}
+
+function platform_admin_bootstrap_permission_grants(): array
+{
+    return ['platform_admins.manage', 'platform_permissions.manage', 'platform_audit.view'];
+}
+
+function current_platform_admin(): ?array
+{
+    $admin = $_SESSION['platform_admin'] ?? null;
+    if (!is_array($admin)
+        || !isset($admin['id'], $admin['name'], $admin['email'], $admin['status'])
+        || filter_var($admin['id'], FILTER_VALIDATE_INT) === false
+        || (int) $admin['id'] < 1
+        || !is_string($admin['name'])
+        || !is_string($admin['email'])
+        || !is_string($admin['status'])
+        || !isset($admin['permissions'])
+        || !is_array($admin['permissions'])) {
+        return null;
+    }
+
+    return $admin;
+}
+
+function platform_admin_has_permission(string $permission, ?mysqli $db = null): bool
+{
+    if (!in_array($permission, platform_admin_permission_catalog(), true)
+        || current_platform_admin() === null
+        || !platform_admin_revalidate_session($db)) {
+        return false;
+    }
+
+    return platform_admin_session_has_permission($permission);
+}
+
+function platform_admin_session_has_permission(string $permission): bool
+{
+    if (!in_array($permission, platform_admin_permission_catalog(), true)) {
+        return false;
+    }
+
+    $admin = current_platform_admin();
+    return $admin !== null && in_array($permission, $admin['permissions'], true);
+}
+
+function require_platform_admin(): void
+{
+    $admin = current_platform_admin();
+    if ($admin === null || !platform_admin_revalidate_session(db_connect())) {
+        http_response_code(401);
+        exit('Platform admin authentication required.');
+    }
+}
+
+function require_platform_permission(string $permission): void
+{
+    require_platform_admin();
+    if (!platform_admin_session_has_permission($permission)) {
+        http_response_code(403);
+        exit('Forbidden.');
+    }
+}
+
+function platform_admin_bootstrap_token(): ?string
+{
+    $token = getenv('FEES_PLATFORM_BOOTSTRAP_TOKEN');
+    return is_string($token) && trim($token) !== '' ? trim($token) : null;
+}
+
+function platform_admin_correlation_id(): string
+{
+    return bin2hex(random_bytes(16));
+}
+
+function platform_admin_bootstrap_available(mysqli $db): bool
+{
+    $statement = $db->prepare(
+        'SELECT initialized_at FROM platform_bootstrap_state WHERE id = 1 FOR UPDATE'
+    );
+    $statement->execute();
+    $state = $statement->get_result()->fetch_assoc();
+    $statement->close();
+    if (!is_array($state)) {
+        throw new RuntimeException('The platform bootstrap state is not available.');
+    }
+    if ($state['initialized_at'] !== null) {
+        return false;
+    }
+
+    $result = $db->query('SELECT COUNT(*) FROM platform_admins');
+    if ($result === false) {
+        throw new RuntimeException('The platform admin table is not available.');
+    }
+
+    return (int) $result->fetch_row()[0] === 0;
+}
+
+function platform_admin_log_bootstrap_failure(string $operation, ?Throwable $exception = null): void
+{
+    log_error('platform_bootstrap_failed', [
+        'operation' => $operation,
+        'error_type' => $exception === null ? null : get_class($exception),
+        'error_code' => $exception === null ? 0 : $exception->getCode(),
+    ]);
+}
+
+function write_platform_audit_log(
+    mysqli $db,
+    ?int $platformAdminId,
+    string $action,
+    ?string $targetType = null,
+    ?int $targetId = null,
+    ?int $targetInstitutionId = null,
+    ?array $metadata = null,
+    ?string $correlationId = null,
+    ?string $userAgent = null,
+    ?string $ipAddress = null
+): void {
+    if ($metadata !== null) {
+        $allowedMetadata = [
+            'bootstrap' => static fn(mixed $value): bool => is_bool($value),
+            'status' => static fn(mixed $value): bool => is_string($value)
+                && in_array($value, ['active', 'pending', 'suspended', 'disabled'], true),
+            'login_mode' => static fn(mixed $value): bool => $value === 'password',
+            'logout' => static fn(mixed $value): bool => is_bool($value),
+            'target_identity' => static fn(mixed $value): bool => in_array($value, ['platform_admin', 'institution_user'], true),
+            'permission' => static fn(mixed $value): bool => is_string($value)
+                && in_array($value, platform_admin_permission_catalog(), true),
+            'granted' => static fn(mixed $value): bool => is_bool($value),
+        ];
+        foreach ($metadata as $key => $value) {
+            if (!is_string($key) || !isset($allowedMetadata[$key]) || !$allowedMetadata[$key]($value)) {
+                throw new InvalidArgumentException('Platform audit metadata contains an unsupported field.');
+            }
+        }
+    }
+    $metadataJson = $metadata === null ? null : json_encode(
+        $metadata,
+        JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE
+    );
+    if (is_string($metadataJson) && strlen($metadataJson) > 2048) {
+        throw new InvalidArgumentException('Platform audit metadata is too large.');
+    }
+    $actorName = null;
+    $statement = $db->prepare(
+        'INSERT INTO platform_audit_logs (
+            actor_platform_admin_id, actor_name, action, target_type, target_id,
+            target_institution_id, ip_address, user_agent, correlation_id, metadata
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    );
+    $statement->bind_param(
+        'isssiissss',
+        $platformAdminId,
+        $actorName,
+        $action,
+        $targetType,
+        $targetId,
+        $targetInstitutionId,
+        $ipAddress,
+        $userAgent,
+        $correlationId,
+        $metadataJson
+    );
+    $statement->execute();
+    $statement->close();
+}
+
+function grant_platform_admin_permission(mysqli $db, int $targetPlatformAdminId, string $permission): bool
+{
+    return update_platform_admin_permission_grant($db, $targetPlatformAdminId, $permission, true);
+}
+
+function revoke_platform_admin_permission(mysqli $db, int $targetPlatformAdminId, string $permission): bool
+{
+    return update_platform_admin_permission_grant($db, $targetPlatformAdminId, $permission, false);
+}
+
+function update_platform_admin_permission_grant(
+    mysqli $db,
+    int $targetPlatformAdminId,
+    string $permission,
+    bool $grant
+): bool {
+    if ($targetPlatformAdminId < 1 || !in_array($permission, platform_admin_permission_catalog(), true)) {
+        throw new InvalidArgumentException('The platform permission grant is invalid.');
+    }
+    if (!platform_admin_has_permission('platform_permissions.manage', $db)) {
+        throw new RuntimeException('Platform permission management is not authorized.');
+    }
+
+    $actor = current_platform_admin();
+    if ($actor === null) {
+        throw new RuntimeException('Platform admin authentication required.');
+    }
+
+    $db->begin_transaction();
+    try {
+        $targetStatement = $db->prepare('SELECT id FROM platform_admins WHERE id = ? FOR UPDATE');
+        $targetStatement->bind_param('i', $targetPlatformAdminId);
+        $targetStatement->execute();
+        $targetExists = $targetStatement->get_result()->fetch_assoc() !== null;
+        $targetStatement->close();
+        if (!$targetExists) {
+            throw new InvalidArgumentException('The target platform administrator is unavailable.');
+        }
+
+        if ($grant) {
+            $statement = $db->prepare(
+                'INSERT IGNORE INTO platform_admin_permission_grants
+                    (platform_admin_id, permission_key, granted_by_platform_admin_id)
+                 VALUES (?, ?, ?)'
+            );
+            $actorId = (int) $actor['id'];
+            $statement->bind_param('isi', $targetPlatformAdminId, $permission, $actorId);
+        } else {
+            $statement = $db->prepare(
+                'DELETE FROM platform_admin_permission_grants
+                 WHERE platform_admin_id = ? AND permission_key = ?'
+            );
+            $statement->bind_param('is', $targetPlatformAdminId, $permission);
+        }
+        $statement->execute();
+        $changed = $statement->affected_rows === 1;
+        $statement->close();
+
+        if ($changed) {
+            write_platform_audit_log(
+                $db,
+                (int) $actor['id'],
+                $grant ? 'platform.admin.permission.granted' : 'platform.admin.permission.revoked',
+                'platform_admin',
+                $targetPlatformAdminId,
+                null,
+                ['permission' => $permission, 'granted' => $grant],
+                platform_admin_correlation_id(),
+                $_SERVER['HTTP_USER_AGENT'] ?? null,
+                filter_var($_SERVER['REMOTE_ADDR'] ?? null, FILTER_VALIDATE_IP) ?: null
+            );
+        }
+
+        $db->commit();
+        return $changed;
+    } catch (Throwable $exception) {
+        $db->rollback();
+        throw $exception;
+    }
+}
+
+function prepare_identity_session(mysqli $db, string $targetIdentity): void
+{
+    if (!in_array($targetIdentity, ['platform_admin', 'institution_user'], true)) {
+        throw new InvalidArgumentException('The requested authentication identity is not recognized.');
+    }
+
+    $institutionUser = current_user();
+    $institutionSession = $_SESSION['auth_session'] ?? null;
+    if ($institutionUser !== null
+        && is_array($institutionSession)
+        && is_string($institutionSession['identifier'] ?? null)
+        && preg_match('/^[a-f0-9]{32}$/D', $institutionSession['identifier']) === 1
+        && is_string($institutionSession['token_hash'] ?? null)
+        && preg_match('/^[a-f0-9]{64}$/D', $institutionSession['token_hash']) === 1) {
+        $userId = (int) $institutionUser['id'];
+        $institutionId = (int) $institutionUser['institution_id'];
+        $identifier = $institutionSession['identifier'];
+        $tokenHash = $institutionSession['token_hash'];
+        $statement = $db->prepare(
+            'UPDATE user_sessions SET revoked_at = CURRENT_TIMESTAMP
+             WHERE user_id = ? AND institution_id = ? AND session_identifier = ?
+               AND session_token_hash = ? AND revoked_at IS NULL'
+        );
+        $statement->bind_param('iiss', $userId, $institutionId, $identifier, $tokenHash);
+        $statement->execute();
+        $statement->close();
+    }
+
+    $platformSessionId = filter_var($_SESSION['platform_admin_session_id'] ?? null, FILTER_VALIDATE_INT);
+    $platformSessionToken = $_SESSION['platform_admin_session_token'] ?? null;
+    if ($platformSessionId !== false && $platformSessionId !== null
+        && is_string($platformSessionToken)
+        && preg_match('/^[a-f0-9]{64}$/D', $platformSessionToken) === 1) {
+        $platformSessionHash = platform_admin_session_hash($platformSessionToken);
+        $statement = $db->prepare(
+            'SELECT platform_admin_id FROM platform_sessions
+             WHERE id = ? AND session_token_hash = ? AND revoked_at IS NULL
+             LIMIT 1 FOR UPDATE'
+        );
+        $statement->bind_param('is', $platformSessionId, $platformSessionHash);
+        $statement->execute();
+        $platformSession = $statement->get_result()->fetch_assoc();
+        $statement->close();
+
+        if (is_array($platformSession)) {
+            $platformAdminId = (int) $platformSession['platform_admin_id'];
+            $statement = $db->prepare(
+                'UPDATE platform_sessions SET revoked_at = CURRENT_TIMESTAMP
+                 WHERE id = ? AND session_token_hash = ? AND revoked_at IS NULL'
+            );
+            $statement->bind_param('is', $platformSessionId, $platformSessionHash);
+            $statement->execute();
+            $revoked = $statement->affected_rows === 1;
+            $statement->close();
+
+            if ($revoked) {
+                write_platform_audit_log(
+                    $db,
+                    $platformAdminId,
+                    'platform.auth.identity_switch',
+                    'platform_admin',
+                    $platformAdminId,
+                    null,
+                    ['target_identity' => $targetIdentity],
+                    platform_admin_correlation_id(),
+                    $_SERVER['HTTP_USER_AGENT'] ?? null,
+                    filter_var($_SERVER['REMOTE_ADDR'] ?? null, FILTER_VALIDATE_IP) ?: null
+                );
+            }
+        }
+    }
+
+    regenerate_session_id();
+    unset(
+        $_SESSION['user'],
+        $_SESSION['auth_session'],
+        $_SESSION['auth_issued_at'],
+        $_SESSION['admin_selected_institution_id'],
+        $_SESSION['platform_admin'],
+        $_SESSION['platform_admin_session_id'],
+        $_SESSION['platform_admin_session_token'],
+        $_SESSION['pending_auth'],
+        $_SESSION['otp_modal_message']
+    );
+}
+
+function platform_admin_bootstrap_initialize(
+    mysqli $db,
+    string $name,
+    string $email,
+    string $password,
+    string $bootstrapToken
+): int {
+    $name = trim($name);
+    if ($name === '' || strlen($name) > 150) {
+        platform_admin_log_bootstrap_failure('invalid_input');
+        throw new InvalidArgumentException('Platform administrator name is required.');
+    }
+    $normalizedEmail = platform_admin_normalize_email($email);
+    if (strlen($normalizedEmail) > 255 || !filter_var($normalizedEmail, FILTER_VALIDATE_EMAIL)) {
+        platform_admin_log_bootstrap_failure('invalid_input');
+        throw new InvalidArgumentException('Enter a valid platform administrator email address.');
+    }
+    if (strlen($password) < 12 || strlen($password) > 72) {
+        platform_admin_log_bootstrap_failure('invalid_input');
+        throw new InvalidArgumentException('Platform administrator password length is invalid.');
+    }
+
+    $expectedToken = platform_admin_bootstrap_token();
+    if ($expectedToken === null || !hash_equals($expectedToken, $bootstrapToken)) {
+        platform_admin_log_bootstrap_failure('invalid_token');
+        throw new RuntimeException('The platform bootstrap token is invalid or not configured.');
+    }
+    $db->begin_transaction();
+    try {
+        if (!platform_admin_bootstrap_available($db)) {
+            throw new RuntimeException('Platform bootstrap is already complete.');
+        }
+
+        $statement = $db->prepare(
+            'INSERT INTO platform_admins (
+                name, email, password_hash, status, created_by_platform_admin_id, is_initial_bootstrap
+             ) VALUES (?, ?, ?, ?, NULL, 1)'
+        );
+        $passwordHash = password_hash($password, PASSWORD_DEFAULT);
+        $status = 'active';
+        $statement->bind_param('ssss', $name, $normalizedEmail, $passwordHash, $status);
+        $statement->execute();
+        $adminId = (int) $db->insert_id;
+        $statement->close();
+
+        $grantStatement = $db->prepare(
+            'INSERT INTO platform_admin_permission_grants (platform_admin_id, permission_key)
+             VALUES (?, ?)'
+        );
+        foreach (platform_admin_bootstrap_permission_grants() as $permission) {
+            $grantStatement->bind_param('is', $adminId, $permission);
+            $grantStatement->execute();
+        }
+        $grantStatement->close();
+
+        $stateStatement = $db->prepare(
+            'UPDATE platform_bootstrap_state
+             SET initialized_at = CURRENT_TIMESTAMP, initialized_by_platform_admin_id = ?
+             WHERE id = 1 AND initialized_at IS NULL'
+        );
+        $stateStatement->bind_param('i', $adminId);
+        $stateStatement->execute();
+        $stateUpdated = $stateStatement->affected_rows === 1;
+        $stateStatement->close();
+        if (!$stateUpdated) {
+            throw new RuntimeException('Platform bootstrap is already complete.');
+        }
+
+        write_platform_audit_log(
+            $db,
+            $adminId,
+            'platform.bootstrap.created',
+            'platform_admin',
+            $adminId,
+            null,
+            [
+                'bootstrap' => true,
+                'status' => 'active',
+            ],
+            platform_admin_correlation_id(),
+            $_SERVER['HTTP_USER_AGENT'] ?? null,
+            filter_var($_SERVER['REMOTE_ADDR'] ?? null, FILTER_VALIDATE_IP) ?: null
+        );
+
+        $db->commit();
+        return $adminId;
+    } catch (Throwable $exception) {
+        $db->rollback();
+        platform_admin_log_bootstrap_failure('initialize', $exception);
+        throw $exception;
+    }
+}
+
+function platform_admin_session_hash(string $rawToken): string
+{
+    return platform_admin_session_token_hash($rawToken);
+}
+
+final class PlatformAdminLoginRateLimited extends RuntimeException
+{
+}
+
+function platform_admin_login_rate_limit_policy(): array
+{
+    return [
+        'account_limit' => 5,
+        'ip_limit' => 30,
+        'window_seconds' => 900,
+    ];
+}
+
+function platform_admin_login_rate_limit_scopes(string $emailIdentifier, string $ipAddress): array
+{
+    $packedIpAddress = inet_pton($ipAddress);
+    $ipScope = is_string($packedIpAddress) ? bin2hex($packedIpAddress) : 'unknown';
+
+    return [
+        [
+            'scope_type' => 'account',
+            'scope_hash' => hash('sha256', $emailIdentifier),
+            'limit' => platform_admin_login_rate_limit_policy()['account_limit'],
+        ],
+        [
+            'scope_type' => 'ip',
+            'scope_hash' => hash('sha256', $ipScope),
+            'limit' => platform_admin_login_rate_limit_policy()['ip_limit'],
+        ],
+    ];
+}
+
+function platform_admin_login_rate_limit_allows(mysqli $db, array $scopes): bool
+{
+    $insert = $db->prepare(
+        'INSERT INTO platform_login_rate_limits (scope_type, scope_hash, window_started_at, failed_attempts)
+         VALUES (?, ?, CURRENT_TIMESTAMP, 0)
+         ON DUPLICATE KEY UPDATE scope_hash = VALUES(scope_hash)'
+    );
+    $lock = $db->prepare(
+        'SELECT failed_attempts,
+                (window_started_at <= DATE_SUB(CURRENT_TIMESTAMP, INTERVAL ? SECOND)) AS window_expired
+         FROM platform_login_rate_limits
+         WHERE scope_type = ? AND scope_hash = ?
+         FOR UPDATE'
+    );
+    $reset = $db->prepare(
+        'UPDATE platform_login_rate_limits
+         SET window_started_at = CURRENT_TIMESTAMP, failed_attempts = 0
+         WHERE scope_type = ? AND scope_hash = ?'
+    );
+    $windowSeconds = platform_admin_login_rate_limit_policy()['window_seconds'];
+
+    foreach ($scopes as $scope) {
+        $scopeType = $scope['scope_type'];
+        $scopeHash = $scope['scope_hash'];
+        $insert->bind_param('ss', $scopeType, $scopeHash);
+        $insert->execute();
+        $lock->bind_param('iss', $windowSeconds, $scopeType, $scopeHash);
+        $lock->execute();
+        $record = $lock->get_result()->fetch_assoc();
+        if (!is_array($record)) {
+            $insert->close();
+            $lock->close();
+            $reset->close();
+            throw new RuntimeException('The platform login rate limiter is unavailable.');
+        }
+        if ((int) $record['window_expired'] === 1) {
+            $reset->bind_param('ss', $scopeType, $scopeHash);
+            $reset->execute();
+            $record['failed_attempts'] = 0;
+        }
+        if ((int) $record['failed_attempts'] >= (int) $scope['limit']) {
+            $insert->close();
+            $lock->close();
+            $reset->close();
+            return false;
+        }
+    }
+
+    $insert->close();
+    $lock->close();
+    $reset->close();
+    return true;
+}
+
+function platform_admin_login_rate_limit_record_failure(mysqli $db, array $scopes): void
+{
+    $statement = $db->prepare(
+        'UPDATE platform_login_rate_limits
+         SET failed_attempts = failed_attempts + 1
+         WHERE scope_type = ? AND scope_hash = ?'
+    );
+    foreach ($scopes as $scope) {
+        $scopeType = $scope['scope_type'];
+        $scopeHash = $scope['scope_hash'];
+        $statement->bind_param('ss', $scopeType, $scopeHash);
+        $statement->execute();
+    }
+    $statement->close();
+}
+
+function platform_admin_login(
+    mysqli $db,
+    string $email,
+    string $password,
+    ?string $userAgent = null,
+    ?string $ipAddress = null
+): ?array {
+    $emailIsBounded = strlen($email) <= 255;
+    $normalizedEmail = $emailIsBounded ? platform_admin_normalize_email($email) : '__oversized__';
+    $emailIsValid = $emailIsBounded && filter_var($normalizedEmail, FILTER_VALIDATE_EMAIL) !== false;
+    $passwordIsBounded = strlen($password) <= 72;
+    $normalizedIp = filter_var($ipAddress, FILTER_VALIDATE_IP);
+    if ($normalizedIp === false) {
+        $normalizedIp = 'unknown';
+    }
+    $scopes = platform_admin_login_rate_limit_scopes($normalizedEmail, $normalizedIp);
+    $sessionRotated = false;
+    $db->query(
+        'DELETE FROM platform_login_rate_limits
+         WHERE window_started_at < DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 1 DAY)'
+    );
+    $db->begin_transaction();
+    try {
+        if (!platform_admin_login_rate_limit_allows($db, $scopes)) {
+            $db->commit();
+            throw new PlatformAdminLoginRateLimited('Platform login temporarily rate limited.');
+        }
+
+        $admin = null;
+        if ($emailIsValid && $passwordIsBounded) {
+            $statement = $db->prepare(
+                'SELECT id, name, email, password_hash, status
+                 FROM platform_admins
+                 WHERE email = ? LIMIT 1 FOR UPDATE'
+            );
+            $statement->bind_param('s', $normalizedEmail);
+            $statement->execute();
+            $admin = $statement->get_result()->fetch_assoc();
+            $statement->close();
+        }
+
+        static $dummyPasswordHash = null;
+        if (!is_string($dummyPasswordHash)) {
+            $dummyPasswordHash = password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT);
+        }
+        $passwordMatches = password_verify(
+            $passwordIsBounded ? $password : '',
+            is_array($admin) ? (string) $admin['password_hash'] : $dummyPasswordHash
+        );
+        if (!is_array($admin) || !$passwordMatches || (string) $admin['status'] !== 'active') {
+            platform_admin_login_rate_limit_record_failure($db, $scopes);
+            $db->commit();
+            return null;
+        }
+
+        $statement = $db->prepare(
+            'SELECT permission_key FROM platform_admin_permission_grants
+             WHERE platform_admin_id = ? ORDER BY permission_key'
+        );
+        $adminId = (int) $admin['id'];
+        $statement->bind_param('i', $adminId);
+        $statement->execute();
+        $permissions = [];
+        $permissionResult = $statement->get_result();
+        while ($grant = $permissionResult->fetch_assoc()) {
+            $permission = (string) $grant['permission_key'];
+            if (in_array($permission, platform_admin_permission_catalog(), true)) {
+                $permissions[] = $permission;
+            }
+        }
+        $statement->close();
+
+        prepare_identity_session($db, 'platform_admin');
+        $sessionRotated = true;
+        $sessionToken = bin2hex(random_bytes(32));
+        $sessionIdentifier = bin2hex(random_bytes(16));
+        $sessionHash = platform_admin_session_hash($sessionToken);
+        $auditUserAgent = is_string($userAgent) ? substr($userAgent, 0, 512) : '';
+        $auditIpAddress = $normalizedIp;
+        $statement = $db->prepare(
+            'INSERT INTO platform_sessions (
+                platform_admin_id, session_identifier, session_token_hash, user_agent, ip_address, expires_at, last_activity_at
+             ) VALUES (?, ?, ?, ?, ?, DATE_ADD(CURRENT_TIMESTAMP, INTERVAL 30 MINUTE), CURRENT_TIMESTAMP)'
+        );
+        $statement->bind_param('issss', $adminId, $sessionIdentifier, $sessionHash, $auditUserAgent, $auditIpAddress);
+        $statement->execute();
+        $sessionId = (int) $db->insert_id;
+        $statement->close();
+
+        $updateStatement = $db->prepare('UPDATE platform_admins SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?');
+        $updateStatement->bind_param('i', $adminId);
+        $updateStatement->execute();
+        $updateStatement->close();
+
+        write_platform_audit_log(
+            $db,
+            $adminId,
+            'platform.auth.login.success',
+            'platform_admin',
+            $adminId,
+            null,
+            ['login_mode' => 'password'],
+            platform_admin_correlation_id(),
+            $auditUserAgent,
+            filter_var($auditIpAddress, FILTER_VALIDATE_IP) ?: null
+        );
+        $db->commit();
+
+        $_SESSION['platform_admin'] = [
+            'id' => $adminId,
+            'name' => (string) $admin['name'],
+            'email' => (string) $admin['email'],
+            'status' => 'active',
+            'permissions' => $permissions,
+        ];
+        $_SESSION['platform_admin_session_id'] = $sessionId;
+        $_SESSION['platform_admin_session_token'] = $sessionToken;
+
+        return [
+            'id' => $adminId,
+            'name' => (string) $admin['name'],
+            'email' => (string) $admin['email'],
+            'status' => 'active',
+            'permissions' => $permissions,
+        ];
+    } catch (PlatformAdminLoginRateLimited $exception) {
+        throw $exception;
+    } catch (Throwable $exception) {
+        $db->rollback();
+        if ($sessionRotated) {
+            unset(
+                $_SESSION['user'],
+                $_SESSION['auth_session'],
+                $_SESSION['auth_issued_at'],
+                $_SESSION['admin_selected_institution_id'],
+                $_SESSION['platform_admin'],
+                $_SESSION['platform_admin_session_id'],
+                $_SESSION['platform_admin_session_token'],
+                $_SESSION['pending_auth'],
+                $_SESSION['otp_modal_message']
+            );
+        }
+        throw $exception;
+    }
+}
+
+function platform_admin_revalidate_session(?mysqli $db = null): bool
+{
+    if (isset($_SESSION['user']) || isset($_SESSION['auth_session'])) {
+        return false;
+    }
+
+    $sessionId = filter_var($_SESSION['platform_admin_session_id'] ?? null, FILTER_VALIDATE_INT);
+    $sessionToken = $_SESSION['platform_admin_session_token'] ?? null;
+    if ($sessionId === false || $sessionId === null || !is_string($sessionToken) || $sessionToken === '') {
+        return false;
+    }
+
+    $db ??= db_connect();
+    $statement = $db->prepare(
+        'SELECT ps.id, ps.platform_admin_id, ps.session_token_hash, ps.expires_at, ps.revoked_at,
+                pa.name, pa.email, pa.status
+         FROM platform_sessions ps
+         JOIN platform_admins pa ON pa.id = ps.platform_admin_id
+         WHERE ps.id = ? AND ps.revoked_at IS NULL
+           AND ps.expires_at > CURRENT_TIMESTAMP
+         LIMIT 1'
+    );
+    $statement->bind_param('i', $sessionId);
+    $statement->execute();
+    $session = $statement->get_result()->fetch_assoc();
+    $statement->close();
+
+    if (!is_array($session)
+        || (string) $session['status'] !== 'active'
+        || !hash_equals((string) $session['session_token_hash'], platform_admin_session_hash($sessionToken))) {
+        return false;
+    }
+
+    $permissionStatement = $db->prepare(
+        'SELECT permission_key FROM platform_admin_permission_grants
+         WHERE platform_admin_id = ? ORDER BY permission_key'
+    );
+    $adminId = (int) $session['platform_admin_id'];
+    $permissionStatement->bind_param('i', $adminId);
+    $permissionStatement->execute();
+    $grants = [];
+    $permissionResult = $permissionStatement->get_result();
+    while ($grant = $permissionResult->fetch_assoc()) {
+        $permission = (string) $grant['permission_key'];
+        if (in_array($permission, platform_admin_permission_catalog(), true)) {
+            $grants[] = $permission;
+        }
+    }
+    $permissionStatement->close();
+
+    $_SESSION['platform_admin'] = [
+        'id' => $adminId,
+        'name' => (string) $session['name'],
+        'email' => (string) $session['email'],
+        'status' => 'active',
+        'permissions' => $grants,
+    ];
+
+    $statement = $db->prepare(
+        'UPDATE platform_sessions SET last_activity_at = CURRENT_TIMESTAMP WHERE id = ?'
+    );
+    $statement->bind_param('i', $sessionId);
+    $statement->execute();
+    $statement->close();
+
+    return true;
+}
+
+function platform_admin_logout(?mysqli $db = null): bool
+{
+    $sessionId = filter_var($_SESSION['platform_admin_session_id'] ?? null, FILTER_VALIDATE_INT);
+    $sessionToken = $_SESSION['platform_admin_session_token'] ?? null;
+    if ($sessionId === false || $sessionId === null
+        || !is_string($sessionToken)
+        || preg_match('/^[a-f0-9]{64}$/D', $sessionToken) !== 1) {
+        return false;
+    }
+
+    $db ??= db_connect();
+    if (!platform_admin_revalidate_session($db)) {
+        return false;
+    }
+    $sessionHash = platform_admin_session_hash($sessionToken);
+    $db->begin_transaction();
+    try {
+        $statement = $db->prepare(
+            'SELECT platform_admin_id FROM platform_sessions
+             WHERE id = ? AND session_token_hash = ? AND revoked_at IS NULL
+             LIMIT 1 FOR UPDATE'
+        );
+        $statement->bind_param('is', $sessionId, $sessionHash);
+        $statement->execute();
+        $session = $statement->get_result()->fetch_assoc();
+        $statement->close();
+
+        if (is_array($session)) {
+            $platformAdminId = (int) $session['platform_admin_id'];
+            $statement = $db->prepare(
+                'UPDATE platform_sessions SET revoked_at = CURRENT_TIMESTAMP
+                 WHERE id = ? AND session_token_hash = ? AND revoked_at IS NULL'
+            );
+            $statement->bind_param('is', $sessionId, $sessionHash);
+            $statement->execute();
+            $revoked = $statement->affected_rows === 1;
+            $statement->close();
+
+            if ($revoked) {
+                write_platform_audit_log(
+                    $db,
+                    $platformAdminId,
+                    'platform.auth.logout',
+                    'platform_admin',
+                    $platformAdminId,
+                    null,
+                    ['logout' => true],
+                    platform_admin_correlation_id(),
+                    $_SERVER['HTTP_USER_AGENT'] ?? null,
+                    filter_var($_SERVER['REMOTE_ADDR'] ?? null, FILTER_VALIDATE_IP) ?: null
+                );
+            }
+        }
+
+        $db->commit();
+    } catch (Throwable $exception) {
+        $db->rollback();
+        throw $exception;
+    }
+
+    clear_app_session();
+    return true;
 }

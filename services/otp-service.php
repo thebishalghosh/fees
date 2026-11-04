@@ -1045,7 +1045,7 @@ function verify_login_challenge(array $pending, string $otp): string
         }
         $statement->close();
 
-        regenerate_session_id();
+        prepare_identity_session($db, 'institution_user');
         $phpSessionId = session_id();
         $sessionIdentifier = bin2hex(random_bytes(16));
         $sessionTokenHash = hash('sha256', $phpSessionId);
