@@ -9,8 +9,179 @@ require_http_methods(['GET', 'POST']);
 require_placeholder_route_access();
 $db = db_connect();
 $institutionId = admin_panel_institution_id();
+if (!academic_management_schema_ready($db)) {
+    academic_management_render_schema_required_page();
+    exit;
+}
 $user = current_user();
 $errors = [];
+$academicConfiguration = academic_management_configuration($db, $institutionId);
+if ($academicConfiguration['academic_model'] !== null) {
+    $sessionView = is_string($_GET['view'] ?? null) ? $_GET['view'] : 'mark';
+    if (!in_array($sessionView, ['mark', 'history'], true)) {
+        $sessionView = 'mark';
+    }
+    $sessionGroupId = attendance_parse_id($_GET['academic_group_id'] ?? '0');
+    $sessionGroupId = $sessionGroupId === null || $sessionGroupId < 0 ? 0 : $sessionGroupId;
+    $sessionDate = is_string($_GET['attendance_date'] ?? null) ? $_GET['attendance_date'] : date('Y-m-d');
+    if (!attendance_valid_date($sessionDate)) {
+        $errors[] = 'Choose a valid attendance date.';
+        $sessionDate = date('Y-m-d');
+    }
+    $postedStatuses = [];
+
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        require_valid_csrf_token();
+        $posted = $_POST['attendance'] ?? [];
+        $postedStatuses = is_array($posted) ? $posted : [];
+        try {
+            $savedCount = attendance_save_session($db, $institutionId, (int) $user['id'], $_POST);
+            set_flash(
+                'success',
+                $savedCount === 0
+                    ? 'Attendance was already up to date.'
+                    : 'Attendance saved; ' . number_format($savedCount) . ' record(s) created or corrected.'
+            );
+            safe_redirect(
+                '/admin/academics/attendance?' . http_build_query([
+                    'view' => 'mark',
+                    'academic_group_id' => (int) ($_POST['academic_group_id'] ?? 0),
+                    'attendance_date' => is_string($_POST['attendance_date'] ?? null)
+                        ? $_POST['attendance_date']
+                        : date('Y-m-d'),
+                ]),
+                303
+            );
+        } catch (InvalidArgumentException | DomainException | OutOfBoundsException $exception) {
+            $errors[] = $exception->getMessage();
+            $postedGroupId = attendance_parse_id($_POST['academic_group_id'] ?? '0');
+            $sessionGroupId = $postedGroupId === null || $postedGroupId < 0 ? 0 : $postedGroupId;
+            if (is_string($_POST['attendance_date'] ?? null) && attendance_valid_date($_POST['attendance_date'])) {
+                $sessionDate = $_POST['attendance_date'];
+            }
+        } catch (Throwable $exception) {
+            log_error('academic_session_attendance_save_failed', [
+                'error_type' => get_class($exception),
+                'error_code' => $exception->getCode(),
+            ]);
+            $errors[] = 'Attendance could not be saved. Review the placement and try again.';
+        }
+    }
+
+    $sessionGroups = attendance_get_session_group_options($db, $institutionId);
+    $sessionRoster = [];
+    if ($sessionGroupId > 0) {
+        try {
+            $sessionRoster = attendance_get_session_roster(
+                $db,
+                $institutionId,
+                (int) ($academicConfiguration['active_academic_year_id'] ?? 0),
+                $sessionGroupId,
+                $sessionDate
+            );
+        } catch (Throwable $exception) {
+            log_error('academic_session_attendance_roster_failed', [
+                'error_type' => get_class($exception),
+                'error_code' => $exception->getCode(),
+            ]);
+            $errors[] = 'The enrolment roster could not be loaded.';
+        }
+    }
+    foreach ($sessionRoster as &$sessionStudent) {
+        $studentId = (int) $sessionStudent['id'];
+        if (is_string($postedStatuses[$studentId] ?? null)) {
+            $sessionStudent['attendance_status'] = $postedStatuses[$studentId];
+        }
+    }
+    unset($sessionStudent);
+    $canCreateSessionAttendance = user_has_compatible_permission('attendance.create', 'academics.manage');
+    $canEditSessionAttendance = user_has_compatible_permission('attendance.edit', 'academics.manage');
+    $sessionHistory = $sessionView === 'history'
+        ? attendance_get_session_history($db, $institutionId)
+        : [];
+    $activeYearId = $academicConfiguration['active_academic_year_id'];
+
+    render_app_page_start(
+        'Attendance Management',
+        'Record attendance against year-specific enrolments and placement history.',
+        'admin',
+        ['admin-dashboard.css', 'attendance-management.css']
+    );
+    ?>
+    <?php echo render_flash_messages(); ?>
+    <?php foreach ($errors as $error): ?><div class="alert alert-danger attendance-alert" role="alert"><?php echo e($error); ?></div><?php endforeach; ?>
+    <nav aria-label="Breadcrumb"><ol class="breadcrumb attendance-breadcrumb"><li class="breadcrumb-item"><a href="<?php echo e(route_url('/admin/dashboard')); ?>">Dashboard</a></li><li class="breadcrumb-item active" aria-current="page">Attendance</li></ol></nav>
+    <nav class="attendance-tabs" aria-label="Attendance sections">
+        <a class="<?php echo $sessionView === 'mark' ? 'is-active' : ''; ?>" href="<?php echo e(route_url('/admin/academics/attendance')); ?>"><i class="bi bi-pencil-square" aria-hidden="true"></i>Mark attendance</a>
+        <a class="<?php echo $sessionView === 'history' ? 'is-active' : ''; ?>" href="<?php echo e(route_url('/admin/academics/attendance') . '?view=history'); ?>"><i class="bi bi-clock-history" aria-hidden="true"></i>Session history</a>
+    </nav>
+    <?php if ($activeYearId === null): ?>
+        <section class="dashboard-panel"><h2>Active academic year required</h2><p>Select the current academic year before taking attendance.</p><a class="btn btn-cobalt" href="<?php echo e(route_url('/admin/academics/years')); ?>">Select academic year</a></section>
+    <?php elseif ($sessionView === 'mark'): ?>
+        <section class="dashboard-panel attendance-panel">
+            <div class="attendance-heading"><div><span class="attendance-kicker">Enrolment register</span><h2>Mark attendance</h2><p>Roster membership follows the student's placement history for the selected date.</p></div></div>
+            <form method="get" action="<?php echo e(route_url('/admin/academics/attendance')); ?>" class="attendance-filter-grid">
+                <input type="hidden" name="view" value="mark">
+                <label>Academic placement<select class="form-select" name="academic_group_id" required><option value="0">Select a placement</option><?php foreach ($sessionGroups as $group): ?><option value="<?php echo e((string) $group['id']); ?>"<?php echo $sessionGroupId === (int) $group['id'] ? ' selected' : ''; ?>><?php echo e($group['label']); ?></option><?php endforeach; ?></select></label>
+                <label>Date<input class="form-control" type="date" name="attendance_date" required value="<?php echo e($sessionDate); ?>"></label>
+                <button class="btn btn-outline-primary attendance-load-button" type="submit"><i class="bi bi-people" aria-hidden="true"></i>Load students</button>
+            </form>
+        </section>
+        <?php if ($sessionGroupId > 0): ?>
+            <section class="dashboard-panel attendance-panel">
+                <div class="attendance-heading"><div><h2>Student register</h2><p>Present, absent, late, and excused entries are saved in an auditable session.</p></div><span class="attendance-roster-count"><?php echo number_format(count($sessionRoster)); ?> students</span></div>
+                <?php if ($sessionRoster === []): ?>
+                    <div class="admin-panel-empty"><i class="bi bi-person-x" aria-hidden="true"></i><strong>No enrolled students found</strong><span>There are no active enrolments in this placement for the selected date.</span></div>
+                <?php else: ?>
+                    <?php
+                    $editableSessionStudentIds = [];
+                    foreach ($sessionRoster as $sessionStudent) {
+                        $hasStatus = ($sessionStudent['attendance_record_id'] ?? null) !== null;
+                        if ($hasStatus ? $canEditSessionAttendance : $canCreateSessionAttendance) {
+                            $editableSessionStudentIds[] = (int) $sessionStudent['id'];
+                        }
+                    }
+                    ?>
+                    <?php if (count($editableSessionStudentIds) === count($sessionRoster)): ?>
+                        <form method="post" action="<?php echo e(route_url('/admin/academics/attendance')); ?>" class="attendance-save-form">
+                            <?php echo csrf_field(); ?>
+                            <input type="hidden" name="academic_year_id" value="<?php echo e((string) $activeYearId); ?>">
+                            <input type="hidden" name="academic_group_id" value="<?php echo e((string) $sessionGroupId); ?>">
+                            <input type="hidden" name="attendance_date" value="<?php echo e($sessionDate); ?>">
+                            <div class="table-responsive"><table class="table attendance-table align-middle">
+                                <thead><tr><th scope="col">Student</th><th scope="col">Student ID</th><th scope="col">Status</th></tr></thead>
+                                <tbody><?php foreach ($sessionRoster as $sessionStudent): ?><tr>
+                                    <td><strong><?php echo e($sessionStudent['full_name']); ?></strong></td>
+                                    <td><?php echo e($sessionStudent['student_code']); ?></td>
+                                    <td><?php if (in_array((int) $sessionStudent['id'], $editableSessionStudentIds, true)): ?><label class="visually-hidden" for="session-attendance-<?php echo (int) $sessionStudent['id']; ?>">Attendance status for <?php echo e($sessionStudent['full_name']); ?></label><select class="form-select attendance-status-select" id="session-attendance-<?php echo (int) $sessionStudent['id']; ?>" name="attendance[<?php echo (int) $sessionStudent['id']; ?>]" required><option value="">Choose status</option><?php foreach (['present' => 'Present', 'absent' => 'Absent', 'late' => 'Late', 'excused' => 'Excused'] as $status => $label): ?><option value="<?php echo e($status); ?>"<?php echo ($sessionStudent['attendance_status'] ?? '') === $status ? ' selected' : ''; ?>><?php echo e($label); ?></option><?php endforeach; ?></select><?php else: ?><?php echo e(ucfirst((string) ($sessionStudent['attendance_status'] ?? 'Not recorded'))); ?><?php endif; ?></td>
+                                </tr><?php endforeach; ?></tbody>
+                            </table></div>
+                            <div class="attendance-form-footer"><span>Existing records require correction permission.</span><button class="btn btn-cobalt" type="submit"><i class="bi bi-check2-circle" aria-hidden="true"></i>Save attendance</button></div>
+                        </form>
+                    <?php else: ?>
+                        <p>This register is read-only because you cannot update every attendance entry.</p>
+                        <div class="table-responsive"><table class="table attendance-table align-middle"><thead><tr><th scope="col">Student</th><th scope="col">Student ID</th><th scope="col">Status</th></tr></thead><tbody><?php foreach ($sessionRoster as $sessionStudent): ?><tr><td><strong><?php echo e($sessionStudent['full_name']); ?></strong></td><td><?php echo e($sessionStudent['student_code']); ?></td><td><?php echo e(ucfirst((string) ($sessionStudent['attendance_status'] ?? 'Not recorded'))); ?></td></tr><?php endforeach; ?></tbody></table></div>
+                    <?php endif; ?>
+                <?php endif; ?>
+            </section>
+        <?php endif; ?>
+    <?php else: ?>
+        <section class="dashboard-panel attendance-panel">
+            <div class="attendance-heading"><div><span class="attendance-kicker">Session archive</span><h2>Attendance session history</h2></div></div>
+            <?php if ($sessionHistory === []): ?><p>No session records have been saved.</p><?php else: ?>
+                <div class="table-responsive"><table class="table attendance-table align-middle">
+                    <thead><tr><th>Date</th><th>Academic year</th><th>Placement</th><th>Recorded</th><th>Present</th><th>Absent</th><th>Late</th><th>Excused</th></tr></thead>
+                    <tbody><?php foreach ($sessionHistory as $history): $parts = array_filter([$history['class_name'] ?? null, $history['section_name'] ?? null, $history['course_name'] ?? null, $history['term_name'] ?? null, $history['batch_name'] ?? null], static fn($part): bool => is_string($part) && $part !== ''); ?><tr>
+                        <td><?php echo e(substr((string) $history['session_at'], 0, 10)); ?></td><td><?php echo e($history['academic_year_name']); ?></td><td><?php echo e($parts === [] ? (string) $history['group_type'] : implode(' / ', $parts)); ?></td><td><?php echo e((string) $history['recorded_count']); ?></td><td><?php echo e((string) $history['present_count']); ?></td><td><?php echo e((string) $history['absent_count']); ?></td><td><?php echo e((string) $history['late_count']); ?></td><td><?php echo e((string) $history['excused_count']); ?></td>
+                    </tr><?php endforeach; ?></tbody>
+                </table></div>
+            <?php endif; ?>
+        </section>
+    <?php endif; ?>
+    <?php render_app_page_end('admin'); ?>
+    <?php
+    exit;
+}
 $view = is_string($_GET['view'] ?? null) ? $_GET['view'] : 'mark';
 if (!in_array($view, ['mark', 'history', 'reports'], true)) {
     $view = 'mark';

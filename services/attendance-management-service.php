@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/audit-service.php';
+require_once __DIR__ . '/academic-management-service.php';
 
 function attendance_valid_date(string $date): bool
 {
@@ -97,7 +98,7 @@ function attendance_validate_parent_filters(array $input): array
         || ($dateFrom !== '' && !attendance_valid_date($dateFrom))
         || ($dateTo !== '' && !attendance_valid_date($dateTo))
         || ($dateFrom !== '' && $dateTo !== '' && $dateFrom > $dateTo)
-        || !in_array($status, ['', 'present', 'absent', 'late'], true)
+        || !in_array($status, ['', 'present', 'absent', 'late', 'excused'], true)
         || $page === null || $page < 1) {
         throw new InvalidArgumentException('Choose a valid attendance status, date range, and page.');
     }
@@ -139,11 +140,112 @@ function attendance_parent_date_filter(array $filters): array
     return [$conditions, $types, $values];
 }
 
+function attendance_parent_record_source(): string
+{
+    return "(SELECT ar.id, ar.institution_id, ar.student_id, ar.attendance_date, ar.status,
+                   ar.academic_year_id, b.name AS batch_name, c.name AS class_name,
+                   NULL AS academic_group_name
+            FROM attendance_records ar
+            JOIN batches b ON b.institution_id = ar.institution_id AND b.id = ar.batch_id
+            LEFT JOIN classes c ON c.institution_id = b.institution_id AND c.id = b.class_id
+            UNION ALL
+            SELECT record.id, record.institution_id, record.student_id, DATE(session.session_at) AS attendance_date,
+                   record.status, record.academic_year_id, NULL AS batch_name,
+                   NULL AS class_name,
+                   COALESCE(
+                       CASE academic_group.group_type
+                           WHEN 'class' THEN group_class.name
+                           WHEN 'section' THEN CONCAT(group_class.name, ' / ', group_section.name)
+                           WHEN 'course' THEN group_course.name
+                           WHEN 'term' THEN CONCAT(group_course.name, ' / ', group_term.name)
+                           WHEN 'batch' THEN group_batch.name
+                       END,
+                       'Academic placement'
+                   ) AS academic_group_name
+            FROM attendance_session_records record
+            JOIN attendance_sessions session
+              ON session.institution_id = record.institution_id
+             AND session.academic_year_id = record.academic_year_id
+             AND session.academic_group_id = record.academic_group_id
+             AND session.id = record.attendance_session_id
+            JOIN academic_groups academic_group
+              ON academic_group.institution_id = record.institution_id
+             AND academic_group.academic_year_id = record.academic_year_id
+             AND academic_group.id = record.academic_group_id
+            LEFT JOIN classes group_class
+              ON group_class.institution_id = academic_group.institution_id
+             AND group_class.id = academic_group.class_id
+            LEFT JOIN sections group_section
+              ON group_section.institution_id = academic_group.institution_id
+             AND group_section.academic_year_id = academic_group.academic_year_id
+             AND group_section.id = academic_group.section_id
+            LEFT JOIN courses group_course
+              ON group_course.institution_id = academic_group.institution_id
+             AND group_course.id = academic_group.course_id
+            LEFT JOIN academic_terms group_term
+              ON group_term.institution_id = academic_group.institution_id
+             AND group_term.academic_year_id = academic_group.academic_year_id
+             AND group_term.id = academic_group.academic_term_id
+            LEFT JOIN batches group_batch
+              ON group_batch.institution_id = academic_group.institution_id
+             AND group_batch.course_id = academic_group.course_id
+             AND group_batch.id = academic_group.batch_id) ar";
+}
+
 function attendance_parent_get_children(mysqli $db, int $parentId, int $institutionId): array
 {
     $statement = $db->prepare(
         "SELECT s.id, s.student_code, s.full_name,
-                c.name AS class_name, b.name AS batch_name
+                COALESCE(
+                    (SELECT COALESCE(
+                                CASE academic_group.group_type
+                                    WHEN 'class' THEN group_class.name
+                                    WHEN 'section' THEN CONCAT(group_class.name, ' / ', group_section.name)
+                                    WHEN 'course' THEN group_course.name
+                                    WHEN 'term' THEN CONCAT(group_course.name, ' / ', group_term.name)
+                                    WHEN 'batch' THEN group_batch.name
+                                END,
+                                'Academic placement'
+                            )
+                     FROM student_enrolments enrolment
+                     JOIN student_enrolment_placements placement
+                       ON placement.institution_id = enrolment.institution_id
+                      AND placement.student_enrolment_id = enrolment.id
+                      AND placement.id = (
+                          SELECT latest.id
+                          FROM student_enrolment_placements latest
+                          WHERE latest.institution_id = enrolment.institution_id
+                            AND latest.student_enrolment_id = enrolment.id
+                          ORDER BY latest.effective_at DESC, latest.id DESC LIMIT 1
+                      )
+                     JOIN academic_groups academic_group
+                       ON academic_group.institution_id = placement.institution_id
+                      AND academic_group.academic_year_id = placement.academic_year_id
+                      AND academic_group.id = placement.academic_group_id
+                     LEFT JOIN classes group_class
+                       ON group_class.institution_id = academic_group.institution_id
+                      AND group_class.id = academic_group.class_id
+                     LEFT JOIN sections group_section
+                       ON group_section.institution_id = academic_group.institution_id
+                      AND group_section.academic_year_id = academic_group.academic_year_id
+                      AND group_section.id = academic_group.section_id
+                     LEFT JOIN courses group_course
+                       ON group_course.institution_id = academic_group.institution_id
+                      AND group_course.id = academic_group.course_id
+                     LEFT JOIN academic_terms group_term
+                       ON group_term.institution_id = academic_group.institution_id
+                      AND group_term.academic_year_id = academic_group.academic_year_id
+                      AND group_term.id = academic_group.academic_term_id
+                     LEFT JOIN batches group_batch
+                       ON group_batch.institution_id = academic_group.institution_id
+                      AND group_batch.course_id = academic_group.course_id
+                      AND group_batch.id = academic_group.batch_id
+                     WHERE enrolment.institution_id = s.institution_id
+                       AND enrolment.student_id = s.id
+                       AND enrolment.enrolment_status = 'active'
+                     ORDER BY enrolment.academic_year_id DESC, placement.effective_at DESC LIMIT 1),
+                    c.name, b.name
+                ) AS placement_name
          FROM parent_student_relationships psr
          JOIN parents p ON p.institution_id = psr.institution_id AND p.id = psr.parent_id
          JOIN users u ON u.institution_id = p.institution_id AND u.id = p.user_id
@@ -184,10 +286,12 @@ function attendance_parent_get_summary(
                      COALESCE(SUM(ar.status = 'present'), 0) AS present_days,
                      COALESCE(SUM(ar.status = 'absent'), 0) AS absent_days,
                      COALESCE(SUM(ar.status = 'late'), 0) AS late_days,
-                     CASE WHEN COUNT(*) = 0 THEN NULL
-                          ELSE ROUND(100.0 * SUM(ar.status IN ('present','late')) / COUNT(*), 2)
+                     COALESCE(SUM(ar.status = 'excused'), 0) AS excused_days,
+                     CASE WHEN COUNT(*) = COALESCE(SUM(ar.status = 'excused'), 0) THEN NULL
+                          ELSE ROUND(100.0 * SUM(ar.status IN ('present','late'))
+                                     / (COUNT(*) - COALESCE(SUM(ar.status = 'excused'), 0)), 2)
                      END AS attendance_percentage
-              FROM attendance_records ar
+              FROM " . attendance_parent_record_source() . "
               JOIN students s ON s.institution_id = ar.institution_id AND s.id = ar.student_id
               JOIN parent_student_relationships psr
                 ON psr.institution_id = s.institution_id AND psr.student_id = s.id
@@ -215,6 +319,7 @@ function attendance_parent_get_summary(
     $summary['present_days'] = (int) $summary['present_days'];
     $summary['absent_days'] = (int) $summary['absent_days'];
     $summary['late_days'] = (int) $summary['late_days'];
+    $summary['excused_days'] = (int) $summary['excused_days'];
     $summary['attendance_percentage'] = $summary['attendance_percentage'] === null
         ? null
         : (float) $summary['attendance_percentage'];
@@ -258,7 +363,7 @@ function attendance_parent_list_records(
         $values[] = $filters['status'];
     }
     $from = implode(' AND ', $conditions);
-    $base = " FROM attendance_records ar
+    $base = ' FROM ' . attendance_parent_record_source() . "
               JOIN students s ON s.institution_id = ar.institution_id AND s.id = ar.student_id
               JOIN parent_student_relationships psr
                 ON psr.institution_id = s.institution_id AND psr.student_id = s.id
@@ -275,13 +380,12 @@ function attendance_parent_list_records(
     $page = min($filters['page'], $totalPages);
     $offset = ($page - 1) * $perPage;
     $rowsStatement = $db->prepare(
-        'SELECT ar.id, ar.attendance_date, ar.status, ar.academic_year_id,
-                ay.name AS academic_year_name, b.name AS batch_name, c.name AS class_name
+        'SELECT ar.attendance_date, ar.status, ar.academic_year_id,
+                ay.name AS academic_year_name, ar.batch_name, ar.class_name,
+                COALESCE(ar.academic_group_name, ar.class_name, ar.batch_name) AS placement_name
         ' . $base . '
          JOIN academic_years ay
            ON ay.institution_id = ar.institution_id AND ay.id = ar.academic_year_id
-         JOIN batches b ON b.institution_id = ar.institution_id AND b.id = ar.batch_id
-         JOIN classes c ON c.institution_id = b.institution_id AND c.id = b.class_id
          WHERE ' . $from . '
          ORDER BY ar.attendance_date DESC, ar.id DESC LIMIT ? OFFSET ?'
     );
@@ -532,6 +636,276 @@ function attendance_save_batch(
         $db->rollback();
         throw $exception;
     }
+}
+
+function attendance_validate_session_mark_input(array $input): array
+{
+    $yearId = attendance_parse_id($input['academic_year_id'] ?? null);
+    $groupId = attendance_parse_id($input['academic_group_id'] ?? null);
+    $date = $input['attendance_date'] ?? null;
+    $statuses = $input['attendance'] ?? null;
+    if ($yearId === null || $yearId < 1 || $groupId === null || $groupId < 1
+        || !is_string($date) || !attendance_valid_date($date)
+        || !is_array($statuses) || $statuses === [] || count($statuses) > 1000) {
+        throw new InvalidArgumentException('Select a valid academic year, placement, date, and student attendance.');
+    }
+
+    $validated = [];
+    foreach ($statuses as $studentId => $status) {
+        if ((!is_string($studentId) && !is_int($studentId))
+            || filter_var((string) $studentId, FILTER_VALIDATE_INT) === false
+            || (int) $studentId < 1
+            || !is_string($status)
+            || !in_array($status, ['present', 'absent', 'late', 'excused'], true)) {
+            throw new InvalidArgumentException('One or more attendance entries are invalid.');
+        }
+        $validated[(int) $studentId] = $status;
+    }
+    if (count($validated) !== count($statuses)) {
+        throw new InvalidArgumentException('Duplicate or invalid student attendance entries were submitted.');
+    }
+    ksort($validated);
+
+    return [
+        'academic_year_id' => $yearId,
+        'academic_group_id' => $groupId,
+        'attendance_date' => $date,
+        'attendance' => $validated,
+    ];
+}
+
+function attendance_get_session_group_options(mysqli $db, int $institutionId): array
+{
+    return academic_management_list_placement_options($db, $institutionId);
+}
+
+function attendance_get_session_roster(
+    mysqli $db,
+    int $institutionId,
+    int $yearId,
+    int $groupId,
+    string $date
+): array {
+    if ($yearId < 1 || $groupId < 1 || !attendance_valid_date($date)) {
+        throw new InvalidArgumentException('Choose a valid academic placement and attendance date.');
+    }
+    $sessionAt = $date . ' 00:00:00.000000';
+    $statement = $db->prepare(
+        "SELECT s.id, s.student_code, s.full_name, e.id AS student_enrolment_id,
+                p.id AS placement_id, record.id AS attendance_record_id,
+                record.status AS attendance_status
+         FROM student_enrolments e
+         JOIN students s ON s.institution_id = e.institution_id AND s.id = e.student_id
+         JOIN student_enrolment_placements p
+           ON p.institution_id = e.institution_id AND p.student_enrolment_id = e.id
+          AND p.id = (
+              SELECT p2.id FROM student_enrolment_placements p2
+              WHERE p2.institution_id = e.institution_id
+                AND p2.student_enrolment_id = e.id
+                AND p2.effective_at < DATE_ADD(?, INTERVAL 1 DAY)
+              ORDER BY p2.effective_at DESC, p2.id DESC LIMIT 1
+          )
+         LEFT JOIN attendance_sessions session
+           ON session.institution_id = e.institution_id
+          AND session.academic_year_id = e.academic_year_id
+          AND session.academic_group_id = p.academic_group_id
+          AND session.session_at = ? AND session.session_code = 'daily'
+         LEFT JOIN attendance_session_records record
+           ON record.institution_id = session.institution_id
+          AND record.attendance_session_id = session.id
+          AND record.student_id = s.id
+         JOIN academic_years ay
+           ON ay.institution_id = e.institution_id AND ay.id = e.academic_year_id
+         WHERE e.institution_id = ? AND e.academic_year_id = ? AND p.academic_group_id = ?
+           AND e.enrolment_status = 'active' AND ay.status = 'active'
+           AND ? BETWEEN ay.start_date AND ay.end_date
+         ORDER BY s.full_name, s.student_code"
+    );
+    $statement->bind_param('ssiiis', $date, $sessionAt, $institutionId, $yearId, $groupId, $date);
+    $statement->execute();
+    $rows = $statement->get_result()->fetch_all(MYSQLI_ASSOC);
+    $statement->close();
+
+    return $rows;
+}
+
+function attendance_save_session(
+    mysqli $db,
+    int $institutionId,
+    int $actorUserId,
+    array $input
+): int {
+    $values = attendance_validate_session_mark_input($input);
+    $db->begin_transaction();
+    try {
+        $year = academic_management_require_active_year($db, $institutionId, $values['academic_year_id']);
+        if ($values['attendance_date'] < (string) $year['start_date']
+            || $values['attendance_date'] > (string) $year['end_date']) {
+            throw new InvalidArgumentException('The attendance date must fall within the selected academic year.');
+        }
+        $group = academic_management_lock_group(
+            $db,
+            $institutionId,
+            $values['academic_year_id'],
+            $values['academic_group_id']
+        );
+        academic_management_validate_group_for_model($group, $year['academic_model']);
+        $roster = attendance_get_session_roster(
+            $db,
+            $institutionId,
+            $values['academic_year_id'],
+            $values['academic_group_id'],
+            $values['attendance_date']
+        );
+        $eligibleById = [];
+        foreach ($roster as $student) {
+            $eligibleById[(int) $student['id']] = $student;
+        }
+        $studentIds = array_keys($values['attendance']);
+        sort($studentIds);
+        $eligibleIds = array_keys($eligibleById);
+        sort($eligibleIds);
+        if ($studentIds !== $eligibleIds) {
+            throw new InvalidArgumentException('Attendance can only be saved for students currently placed in this group.');
+        }
+
+        foreach ($values['attendance'] as $studentId => $status) {
+            $oldStatus = $eligibleById[$studentId]['attendance_status'] ?? null;
+            if ($oldStatus === $status) {
+                continue;
+            }
+            $requiredPermission = $oldStatus === null ? 'attendance.create' : 'attendance.edit';
+            if (!user_has_compatible_permission($requiredPermission, 'academics.manage')) {
+                throw new DomainException('You do not have permission to record or correct this attendance entry.');
+            }
+        }
+
+        $sessionAt = $values['attendance_date'] . ' 00:00:00.000000';
+        $sessionCode = 'daily';
+        $sessionStatus = 'open';
+        $statement = $db->prepare(
+            "INSERT INTO attendance_sessions
+                (institution_id, academic_year_id, academic_group_id, session_at, session_code, status)
+             VALUES (?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)"
+        );
+        $statement->bind_param(
+            'iiisss',
+            $institutionId,
+            $values['academic_year_id'],
+            $values['academic_group_id'],
+            $sessionAt,
+            $sessionCode,
+            $sessionStatus
+        );
+        $statement->execute();
+        $sessionId = (int) $statement->insert_id;
+        $statement->close();
+
+        $savedCount = 0;
+        foreach ($values['attendance'] as $studentId => $status) {
+            $student = $eligibleById[$studentId];
+            $oldStatus = $student['attendance_status'] ?? null;
+            if ($oldStatus === $status) {
+                continue;
+            }
+            $statement = $db->prepare(
+                'INSERT INTO attendance_session_records
+                    (institution_id, academic_year_id, academic_group_id, attendance_session_id,
+                     student_id, student_enrolment_id, placement_id, status, recorded_by)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id),
+                                         placement_id = VALUES(placement_id),
+                                         status = VALUES(status), recorded_by = VALUES(recorded_by)'
+            );
+            $statement->bind_param(
+                'iiiiiiisi',
+                $institutionId,
+                $values['academic_year_id'],
+                $values['academic_group_id'],
+                $sessionId,
+                $studentId,
+                $student['student_enrolment_id'],
+                $student['placement_id'],
+                $status,
+                $actorUserId
+            );
+            $statement->execute();
+            $recordId = (int) $statement->insert_id;
+            $statement->close();
+            $actor = current_user();
+            write_audit_log(
+                $db,
+                $institutionId,
+                $actorUserId,
+                is_array($actor) ? (string) $actor['user_type'] : 'admin',
+                $oldStatus === null ? 'attendance_session.created' : 'attendance_session.corrected',
+                'attendance_session_record',
+                (string) $recordId,
+                $oldStatus === null ? null : ['status' => (string) $oldStatus],
+                [
+                    'attendance_session_id' => $sessionId,
+                    'student_id' => $studentId,
+                    'student_enrolment_id' => (int) $student['student_enrolment_id'],
+                    'placement_id' => (int) $student['placement_id'],
+                    'status' => $status,
+                ]
+            );
+            $savedCount++;
+        }
+        $db->commit();
+        return $savedCount;
+    } catch (Throwable $exception) {
+        $db->rollback();
+        throw $exception;
+    }
+}
+
+function attendance_get_session_history(mysqli $db, int $institutionId): array
+{
+    $statement = $db->prepare(
+        "SELECT session.id, session.academic_year_id, session.session_at, session.session_code,
+                ay.name AS academic_year_name, g.group_type,
+                c.name AS class_name, section.name AS section_name,
+                course.name AS course_name, term.name AS term_name, b.name AS batch_name,
+                COUNT(record.id) AS recorded_count,
+                COALESCE(SUM(record.status = 'present'), 0) AS present_count,
+                COALESCE(SUM(record.status = 'absent'), 0) AS absent_count,
+                COALESCE(SUM(record.status = 'late'), 0) AS late_count,
+                COALESCE(SUM(record.status = 'excused'), 0) AS excused_count
+         FROM attendance_sessions session
+         JOIN academic_years ay
+           ON ay.institution_id = session.institution_id AND ay.id = session.academic_year_id
+         JOIN academic_groups g
+           ON g.institution_id = session.institution_id
+          AND g.academic_year_id = session.academic_year_id AND g.id = session.academic_group_id
+         LEFT JOIN classes c ON c.institution_id = g.institution_id AND c.id = g.class_id
+         LEFT JOIN sections section
+           ON section.institution_id = g.institution_id AND section.academic_year_id = g.academic_year_id
+          AND section.class_id = g.class_id AND section.id = g.section_id
+         LEFT JOIN courses course ON course.institution_id = g.institution_id AND course.id = g.course_id
+         LEFT JOIN academic_terms term
+           ON term.institution_id = g.institution_id AND term.academic_year_id = g.academic_year_id
+          AND term.course_id = g.course_id AND term.id = g.academic_term_id
+         LEFT JOIN batches b
+           ON b.institution_id = g.institution_id AND b.course_id = g.course_id AND b.id = g.batch_id
+         LEFT JOIN attendance_session_records record
+           ON record.institution_id = session.institution_id
+          AND record.academic_year_id = session.academic_year_id
+          AND record.academic_group_id = session.academic_group_id
+          AND record.attendance_session_id = session.id
+         WHERE session.institution_id = ?
+         GROUP BY session.id, session.academic_year_id, session.session_at, session.session_code,
+                  ay.name, g.group_type, c.name, section.name, course.name, term.name, b.name
+         ORDER BY session.session_at DESC, session.id DESC
+         LIMIT 500"
+    );
+    $statement->bind_param('i', $institutionId);
+    $statement->execute();
+    $rows = $statement->get_result()->fetch_all(MYSQLI_ASSOC);
+    $statement->close();
+
+    return $rows;
 }
 
 function attendance_get_history(mysqli $db, int $institutionId, array $filters): array

@@ -33,6 +33,23 @@ $check(
     authenticated_institution_id(['staff']) === null,
     'Fail closed when the staff session has no valid institution association'
 );
+$_SESSION['user'] = [
+    'id' => 82,
+    'institution_id' => 1404,
+    'user_type' => 'super_admin',
+    'status' => 'active',
+    'permissions' => [],
+];
+$_SESSION['admin_selected_institution_id'] = 1509;
+$check(
+    authenticated_institution_id(['super_admin']) === 1509,
+    'Resolve Super Admin queries through the selected institution context'
+);
+unset($_SESSION['admin_selected_institution_id']);
+$check(
+    authenticated_institution_id(['super_admin']) === null,
+    'Do not silently use the Super Admin account institution as a data filter'
+);
 unset($_SESSION['user']);
 
 $auth = file_get_contents(__DIR__ . '/../includes/auth.php');
@@ -48,6 +65,7 @@ $headerLayout = file_get_contents(__DIR__ . '/../includes/layouts/header.php');
 $headLayout = file_get_contents(__DIR__ . '/../includes/layouts/head.php');
 $dashboard = file_get_contents(__DIR__ . '/../admin/dashboard.php');
 $dashboardCss = file_get_contents(__DIR__ . '/../public/assets/css/pages/admin-dashboard.css');
+$parentList = file_get_contents(__DIR__ . '/../admin/parents/index.php');
 
 $check(
     is_string($auth)
@@ -98,6 +116,14 @@ $check(
         && str_contains($dashboardCss, 'var(--brand-primary)')
         && str_contains($dashboardCss, 'var(--brand-secondary)'),
     'Apply validated institution theme tokens after page styles and greet the authenticated staff member'
+);
+$check(
+    is_string($pageLayout)
+        && str_contains($pageLayout, 'render_admin_institution_selector')
+        && str_contains($pageLayout, 'admin_panel_institution_options')
+        && is_string($parentList)
+        && str_contains($parentList, 'parent_management_list($db, $institutionId'),
+    'Show a shared institution filter and keep parent listings scoped to the selected institution'
 );
 
 if ($failures !== []) {

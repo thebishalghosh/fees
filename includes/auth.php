@@ -22,6 +22,19 @@ function current_user(): ?array
     return $user;
 }
 
+function admin_selected_institution_id(): ?int
+{
+    $user = current_user();
+    if ($user === null || $user['user_type'] !== 'super_admin') {
+        return null;
+    }
+
+    $institutionId = filter_var($_SESSION['admin_selected_institution_id'] ?? null, FILTER_VALIDATE_INT);
+    return $institutionId !== false && $institutionId !== null && $institutionId > 0
+        ? (int) $institutionId
+        : null;
+}
+
 function authenticated_institution_id(array $allowedUserTypes): ?int
 {
     $user = current_user();
@@ -36,9 +49,13 @@ function authenticated_institution_id(array $allowedUserTypes): ?int
         }
     }
 
-    return in_array($user['user_type'], $allowedUserTypes, true)
-        ? (int) $user['institution_id']
-        : null;
+    if (!in_array($user['user_type'], $allowedUserTypes, true)) {
+        return null;
+    }
+
+    return $user['user_type'] === 'super_admin'
+        ? admin_selected_institution_id()
+        : (int) $user['institution_id'];
 }
 
 function is_authenticated(): bool
@@ -229,6 +246,9 @@ function user_has_permission(string $permission): bool
     if ($user === null || !is_array($permissions)) {
         return false;
     }
+    if ($user['user_type'] === 'super_admin') {
+        return true;
+    }
 
     foreach ($permissions as $grantedPermission) {
         if (is_string($grantedPermission) && hash_equals($grantedPermission, $permission)) {
@@ -242,9 +262,13 @@ function user_has_permission(string $permission): bool
 function user_can_access_institution(int $institutionId): bool
 {
     $user = current_user();
-    return $institutionId > 0
-        && $user !== null
-        && (int) $user['institution_id'] === $institutionId;
+    if ($institutionId < 1 || $user === null) {
+        return false;
+    }
+
+    return $user['user_type'] === 'super_admin'
+        ? admin_selected_institution_id() === $institutionId
+        : (int) $user['institution_id'] === $institutionId;
 }
 
 function require_permission(string $permission): void
@@ -405,6 +429,54 @@ function require_placeholder_route_access(): void
         exit('Forbidden.');
     }
     $relativePath = substr($scriptPath, strlen('/admin/'));
+    if ($user['user_type'] === 'super_admin') {
+        $requestData = $_SERVER['REQUEST_METHOD'] === 'POST' ? $_POST : $_GET;
+        $requestHasInstitution = array_key_exists('institution_id', $requestData);
+        $requestedInstitution = $requestData['institution_id'] ?? null;
+        if ($requestHasInstitution) {
+            if ($requestedInstitution === null || $requestedInstitution === '') {
+                unset($_SESSION['admin_selected_institution_id']);
+            } else {
+                $requestedId = filter_var($requestedInstitution, FILTER_VALIDATE_INT);
+                if ($requestedId === false || $requestedId < 1) {
+                    unset($_SESSION['admin_selected_institution_id']);
+                    http_response_code(400);
+                    exit('Choose a valid institution.');
+                }
+                $db = db_connect();
+                $statement = $db->prepare(
+                    "SELECT id FROM institutions WHERE id = ? AND status <> 'archived' LIMIT 1"
+                );
+                $statement->bind_param('i', $requestedId);
+                $statement->execute();
+                $availableInstitutionId = $statement->get_result()->fetch_column();
+                $statement->close();
+                if ($availableInstitutionId === false) {
+                    unset($_SESSION['admin_selected_institution_id']);
+                    http_response_code(404);
+                    exit('The selected institution is unavailable.');
+                }
+                $_SESSION['admin_selected_institution_id'] = (int) $availableInstitutionId;
+            }
+        } elseif (admin_selected_institution_id() !== null) {
+            $selectedId = admin_selected_institution_id();
+            $db = db_connect();
+            $statement = $db->prepare(
+                "SELECT id FROM institutions WHERE id = ? AND status <> 'archived' LIMIT 1"
+            );
+            $statement->bind_param('i', $selectedId);
+            $statement->execute();
+            $stillAvailable = $statement->get_result()->fetch_column();
+            $statement->close();
+            if ($stillAvailable === false) {
+                unset($_SESSION['admin_selected_institution_id']);
+            }
+        }
+        if (admin_selected_institution_id() === null
+            && !in_array($relativePath, ['dashboard.php', 'index.php'], true)) {
+            safe_redirect('/admin/dashboard?select_institution=1', 303);
+        }
+    }
     $section = explode('/', $relativePath)[0] ?? '';
     $action = pathinfo($relativePath, PATHINFO_FILENAME);
     $permission = null;
@@ -421,7 +493,10 @@ function require_placeholder_route_access(): void
         http_response_code(403);
         exit('Forbidden.');
     }
-    if (!user_has_compatible_permission($permission, $legacyPermission ?? $permission)) {
+    $superAdminClassRoute = $user['user_type'] === 'super_admin'
+        && in_array($relativePath, ['academics/classes.php', 'academics/create-class.php'], true);
+    if (!$superAdminClassRoute
+        && !user_has_compatible_permission($permission, $legacyPermission ?? $permission)) {
         http_response_code(403);
         exit('Forbidden.');
     }
@@ -486,9 +561,30 @@ function admin_route_permissions(string $relativePath, string $section, string $
             return [$editing ? 'announcements.edit' : 'announcements.create', 'notifications.manage'];
         }
     }
+    if ($section === 'admissions' && $action === 'view' && $method === 'POST') {
+        return match ($_POST['action'] ?? null) {
+            'approve' => ['admissions.approve', 'admissions.manage'],
+            'reject' => ['admissions.reject', 'admissions.manage'],
+            'convert' => ['admissions.approve', 'admissions.manage'],
+            default => ['admissions.edit', 'admissions.manage'],
+        };
+    }
     if ($section === 'academics') {
         if ($action === 'create-class') {
             return ['classes.create', 'academics.manage'];
+        }
+        if ($action === 'classes' && $method === 'POST') {
+            return in_array($_POST['action'] ?? null, ['update_class', 'update_section'], true)
+                ? ['classes.edit', 'academics.manage']
+                : ['classes.create', 'academics.manage'];
+        }
+        if (in_array($action, ['subjects', 'programmes'], true) && $method === 'POST') {
+            return ['academic_years.edit', 'academics.manage'];
+        }
+        if ($action === 'enrolments' && $method === 'POST') {
+            return (($_POST['action'] ?? null) === 'enrol')
+                ? ['students.create', 'academics.manage']
+                : ['students.edit', 'academics.manage'];
         }
         if ($action === 'years' && $method === 'POST') {
             return (($_POST['action'] ?? null) === 'create')
@@ -549,6 +645,7 @@ function admin_route_permissions(string $relativePath, string $section, string $
         'academics' => match ($action) {
             'years' => 'academic_years',
             'classes', 'create-class' => 'classes',
+            'subjects', 'programmes', 'enrolments' => 'academic_years',
             'attendance' => 'attendance',
             'examinations' => 'examinations',
             'results' => 'results',

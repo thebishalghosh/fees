@@ -92,7 +92,7 @@ render_app_page_start(
         <div class="parent-children-empty"><span><i class="bi bi-calendar2-x" aria-hidden="true"></i></span><h3>No linked students available</h3><p>No linked child currently has academic access to attendance records.</p></div>
     <?php else: ?>
         <div class="parent-attendance-student">
-            <div><span class="parent-attendance-eyebrow">Selected child</span><h3><?php echo e($student['full_name']); ?></h3><p><?php echo e(implode(' · ', array_filter([$student['student_code'], $student['class_name'] ?? null, $student['batch_name'] ?? null]))); ?></p></div>
+            <div><span class="parent-attendance-eyebrow">Selected child</span><h3><?php echo e($student['full_name']); ?></h3><p><?php echo e(implode(' · ', array_filter([$student['student_code'], $student['placement_name'] ?? null]))); ?></p></div>
             <?php if (count($children) > 1): ?>
                 <form method="get" action="<?php echo e(route_url('/parent/attendance')); ?>" class="parent-attendance-child-switcher">
                     <label for="attendance-child">Switch child</label>
@@ -108,7 +108,7 @@ render_app_page_start(
         <?php if ($filterError !== ''): ?><div class="alert alert-warning" role="alert"><?php echo e($filterError); ?> Showing unfiltered attendance.</div><?php endif; ?>
         <form class="parent-attendance-filters" method="get" action="<?php echo e(route_url('/parent/attendance')); ?>">
             <input type="hidden" name="student_id" value="<?php echo e((string) $selectedStudentId); ?>">
-            <label>Status<select name="status" class="form-select"><option value="">All statuses</option><?php foreach (['present', 'absent', 'late'] as $option): ?><option value="<?php echo e($option); ?>"<?php echo $filters['status'] === $option ? ' selected' : ''; ?>><?php echo e(ucfirst($option)); ?></option><?php endforeach; ?></select></label>
+            <label>Status<select name="status" class="form-select"><option value="">All statuses</option><?php foreach (['present', 'absent', 'late', 'excused'] as $option): ?><option value="<?php echo e($option); ?>"<?php echo $filters['status'] === $option ? ' selected' : ''; ?>><?php echo e(ucfirst($option)); ?></option><?php endforeach; ?></select></label>
             <label>From date<input class="form-control" type="date" name="from" value="<?php echo e($filters['date_from']); ?>"></label>
             <label>To date<input class="form-control" type="date" name="to" value="<?php echo e($filters['date_to']); ?>"></label>
             <button class="btn btn-cobalt" type="submit">Filter</button>
@@ -121,6 +121,7 @@ render_app_page_start(
                 ['Present', $summary['present_days'], 'bi-check-circle'],
                 ['Absent', $summary['absent_days'], 'bi-x-circle'],
                 ['Late', $summary['late_days'], 'bi-clock-history'],
+                ['Excused', $summary['excused_days'], 'bi-calendar2-check'],
             ] as [$label, $value, $icon]): ?>
                 <article><span aria-hidden="true"><i class="bi <?php echo e($icon); ?>"></i></span><div><small><?php echo e($label); ?></small><strong><?php echo e(number_format((int) $value)); ?></strong></div></article>
             <?php endforeach; ?>
@@ -133,7 +134,7 @@ render_app_page_start(
             <div class="table-responsive"><table class="table parent-payments-table align-middle parent-attendance-table">
                 <thead><tr><th>Date</th><th>Academic session</th><th>Class / batch</th><th>Status</th></tr></thead>
                 <tbody><?php foreach ($history['records'] as $record): ?>
-                    <tr><td><?php echo e(date('j M Y', strtotime((string) $record['attendance_date']))); ?></td><td><?php echo e($record['academic_year_name']); ?></td><td><?php echo e($record['class_name']); ?> / <?php echo e($record['batch_name']); ?></td><td><span class="parent-attendance-status is-<?php echo e($record['status']); ?>"><?php echo e(ucfirst($record['status'])); ?></span></td></tr>
+                    <tr><td><?php echo e(date('j M Y', strtotime((string) $record['attendance_date']))); ?></td><td><?php echo e($record['academic_year_name']); ?></td><td><?php echo e($record['placement_name']); ?></td><td><span class="parent-attendance-status is-<?php echo e($record['status']); ?>"><?php echo e(ucfirst($record['status'])); ?></span></td></tr>
                 <?php endforeach; ?></tbody>
             </table></div>
             <?php if ($history['total_pages'] > 1): ?>

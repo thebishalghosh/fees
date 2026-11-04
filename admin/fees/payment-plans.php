@@ -13,7 +13,7 @@ $user = current_user();
 if ($user === null) {
     throw new RuntimeException('An authenticated institution account is required.');
 }
-$institutionId = (int) $user['institution_id'];
+$institutionId = admin_panel_institution_id();
 $errors = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {

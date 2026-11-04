@@ -3,11 +3,16 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../includes/page-placeholder.php';
 require_once __DIR__ . '/../../services/admin-panel-service.php';
+require_once __DIR__ . '/../../services/academic-management-service.php';
 
 require_http_methods(['GET', 'POST']);
 require_placeholder_route_access();
 $db = db_connect();
 $institutionId = admin_panel_institution_id();
+if (!academic_management_schema_ready($db)) {
+    academic_management_render_schema_required_page();
+    exit;
+}
 $user = current_user();
 $errors = [];
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -24,7 +29,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new InvalidArgumentException('The academic-year action is invalid.');
             }
             admin_panel_set_academic_year_status($db, $institutionId, (int) $user['id'], (int) $yearId, $status);
-            set_flash('success', 'Academic-year status updated.');
+            set_flash('success', $status === 'closed'
+                ? 'Academic year closed. Historical academic records were preserved.'
+                : 'Academic-year status updated. Select it as current when ready.');
+        } elseif (($_POST['action'] ?? '') === 'select') {
+            $yearId = filter_var($_POST['year_id'] ?? null, FILTER_VALIDATE_INT);
+            if ($yearId === false || $yearId < 1) {
+                throw new InvalidArgumentException('Choose a valid active academic year.');
+            }
+            academic_management_set_active_year($db, $institutionId, (int) $yearId, (int) $user['id']);
+            set_flash('success', 'The active academic year was selected. Other years were not closed.');
+        } elseif (($_POST['action'] ?? '') === 'configure_model') {
+            $model = $_POST['academic_model'] ?? null;
+            if (!is_string($model)) {
+                throw new InvalidArgumentException('Choose a supported academic model.');
+            }
+            academic_management_configure_model($db, $institutionId, (int) $user['id'], $model);
+            set_flash('success', 'Academic model saved. Continue configuring its year-specific structure.');
+        } elseif (($_POST['action'] ?? '') === 'complete_setup') {
+            academic_management_complete_configuration($db, $institutionId, (int) $user['id']);
+            set_flash('success', 'Academic setup completed.');
         } else {
             throw new InvalidArgumentException('Select a supported academic-year action.');
         }
@@ -40,6 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 $years = admin_panel_simple_list($db, $institutionId, 'academic_years');
+$configuration = academic_management_configuration($db, $institutionId);
 $canCreateYear = user_has_compatible_permission('academic_years.create', 'academics.manage');
 $canEditYear = user_has_compatible_permission('academic_years.edit', 'academics.manage');
 $yearCounts = ['total' => count($years), 'draft' => 0, 'active' => 0, 'closed' => 0];
@@ -75,6 +100,40 @@ render_app_page_start(
         <span class="academic-year-summary-icon"><i class="bi bi-lock" aria-hidden="true"></i></span>
         <div><span>Closed</span><strong><?php echo e((string) $yearCounts['closed']); ?></strong></div>
     </article>
+</section>
+<section class="dashboard-panel academic-year-list-card" aria-labelledby="academic-model-title">
+    <div class="academic-year-list-heading">
+        <div>
+            <span class="academic-year-kicker">Institution configuration</span>
+            <h2 id="academic-model-title">Academic model</h2>
+            <p>Choose the academic structure used by this institution. Legacy institutions remain unconfigured until reviewed.</p>
+        </div>
+        <span class="academic-year-count"><?php echo e(ucwords(str_replace('_', ' ', $configuration['academic_configuration_status']))); ?></span>
+    </div>
+    <?php if ($canEditYear): ?>
+        <form method="post" action="<?php echo e(route_url('/admin/academics/years')); ?>" class="academic-year-form">
+            <?php echo csrf_field(); ?>
+            <input type="hidden" name="action" value="configure_model">
+            <label class="admin-form-field">Academic model
+                <select class="form-select" name="academic_model" required>
+                    <option value="">Select a model</option>
+                    <?php foreach (['school' => 'School', 'college' => 'College', 'university' => 'University', 'coaching' => 'Coaching / Training Centre'] as $model => $label): ?>
+                        <option value="<?php echo e($model); ?>"<?php echo $configuration['academic_model'] === $model ? ' selected' : ''; ?>><?php echo e($label); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <div class="academic-year-form-action"><button class="btn btn-cobalt" type="submit">Save academic model</button></div>
+        </form>
+        <?php if ($configuration['academic_model'] !== null && $configuration['academic_configuration_status'] !== 'configured'): ?>
+            <form method="post" action="<?php echo e(route_url('/admin/academics/years')); ?>" class="mt-3">
+                <?php echo csrf_field(); ?>
+                <input type="hidden" name="action" value="complete_setup">
+                <button class="btn btn-outline-primary" type="submit">Complete academic setup</button>
+            </form>
+        <?php endif; ?>
+    <?php else: ?>
+        <p class="mb-0"><?php echo e($configuration['academic_model'] === null ? 'Not configured' : ucfirst((string) $configuration['academic_model'])); ?></p>
+    <?php endif; ?>
 </section>
 <?php if ($canCreateYear): ?>
     <section class="dashboard-panel academic-year-create-card">
@@ -120,7 +179,7 @@ render_app_page_start(
     <?php else: ?>
         <div class="table-responsive academic-year-table-wrap">
             <table class="table admin-panel-table academic-year-table">
-                <thead><tr><th scope="col">Academic year</th><th scope="col">Date range</th><th scope="col">Status</th><th scope="col">Next action</th></tr></thead>
+                <thead><tr><th scope="col">Academic year</th><th scope="col">Date range</th><th scope="col">Status</th><th scope="col">Selection</th><th scope="col">Next action</th></tr></thead>
                 <tbody>
                     <?php foreach ($years as $year):
                         $statusClass = match ($year['status']) {
@@ -134,6 +193,7 @@ render_app_page_start(
                             <td><span class="academic-year-name"><?php echo e((string) $year['name']); ?></span><small>Session #<?php echo e((string) $year['id']); ?></small></td>
                             <td><span class="academic-year-date-range"><i class="bi bi-calendar-event" aria-hidden="true"></i><?php echo e(date('M j, Y', strtotime((string) $year['start_date']))); ?><span aria-hidden="true">–</span><?php echo e(date('M j, Y', strtotime((string) $year['end_date']))); ?></span></td>
                             <td><span class="academic-year-status academic-year-status-<?php echo e($statusClass); ?>"><i aria-hidden="true"></i><?php echo e(ucfirst((string) $year['status'])); ?></span></td>
+                            <td><?php if ((int) $year['id'] === $configuration['active_academic_year_id']): ?><span class="academic-year-locked"><i class="bi bi-check-circle-fill me-1" aria-hidden="true"></i>Current</span><?php elseif ($year['status'] === 'active' && $canEditYear): ?><form method="post" action="<?php echo e(route_url('/admin/academics/years')); ?>"><?php echo csrf_field(); ?><input type="hidden" name="action" value="select"><input type="hidden" name="year_id" value="<?php echo e((string) $year['id']); ?>"><button class="btn btn-sm btn-outline-primary" type="submit">Set as current</button></form><?php else: ?><span class="text-muted">Not selected</span><?php endif; ?></td>
                             <td><?php if (!$canEditYear): ?><span class="text-muted">No action available</span><?php elseif ($year['status'] === 'draft'): ?><form method="post" action="<?php echo e(route_url('/admin/academics/years')); ?>"><?php echo csrf_field(); ?><input type="hidden" name="action" value="status"><input type="hidden" name="year_id" value="<?php echo e((string) $year['id']); ?>"><input type="hidden" name="status" value="active"><button class="btn btn-sm btn-outline-primary" type="submit"><i class="bi bi-play-fill me-1" aria-hidden="true"></i>Activate</button></form><?php elseif ($year['status'] === 'active'): ?><form method="post" action="<?php echo e(route_url('/admin/academics/years')); ?>"><?php echo csrf_field(); ?><input type="hidden" name="action" value="status"><input type="hidden" name="year_id" value="<?php echo e((string) $year['id']); ?>"><input type="hidden" name="status" value="closed"><button class="btn btn-sm btn-outline-secondary" type="submit"><i class="bi bi-lock me-1" aria-hidden="true"></i>Close year</button></form><?php else: ?><span class="academic-year-locked"><i class="bi bi-lock-fill me-1" aria-hidden="true"></i>Locked</span><?php endif; ?></td>
                         </tr>
                     <?php endforeach; ?>

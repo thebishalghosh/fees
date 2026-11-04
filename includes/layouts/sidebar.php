@@ -8,12 +8,16 @@ function render_sidebar_nav(string $context = 'admin'): void
             ['Overview', '/admin/dashboard', 'bi-grid-1x2', 'dashboard.view', 'Workspace'],
             ['Students', '/admin/students/index', 'bi-people', 'students.view', 'People'],
             ['Parents', '/admin/parents/index', 'bi-person-hearts', 'parents.view', 'People'],
+            ['Admissions', '/admin/admissions/index', 'bi-person-vcard', 'admissions.view', 'People', 'admissions.manage'],
             ['Staff & administrators', '/admin/staff/index', 'bi-person-badge', 'staff.view', 'People', 'staff.manage'],
             ['Role permissions', '/admin/staff/permissions', 'bi-shield-lock', 'roles.view', 'People', 'staff.manage'],
             ['Courses', '/admin/courses/index', 'bi-journals', 'courses.view', 'Academics', 'courses.manage'],
             ['Batches', '/admin/batches/index', 'bi-collection', 'batches.view', 'Academics', 'courses.manage'],
             ['Academic years', '/admin/academics/years', 'bi-calendar3', 'academic_years.view', 'Academics', 'academics.manage'],
             ['Classes', '/admin/academics/classes', 'bi-building', 'classes.view', 'Academics', 'academics.manage'],
+            ['Programmes & terms', '/admin/academics/programmes', 'bi-diagram-3', 'academic_years.view', 'Academics', 'academics.manage'],
+            ['Subjects', '/admin/academics/subjects', 'bi-journal-bookmark', 'academic_years.view', 'Academics', 'academics.manage'],
+            ['Student enrolments', '/admin/academics/enrolments', 'bi-person-check', 'students.view', 'Academics', 'academics.manage'],
             ['Attendance', '/admin/academics/attendance', 'bi-calendar-check', 'attendance.view', 'Academics', 'academics.manage'],
             ['Timetables', '/admin/academics/timetables', 'bi-calendar-week', 'academic_years.view', 'Academics', 'academics.manage'],
             ['Examinations', '/admin/academics/examinations', 'bi-journal-check', 'examinations.view', 'Academics', 'academics.manage'],
@@ -57,6 +61,42 @@ function render_sidebar_nav(string $context = 'admin'): void
     if ($context === 'admin' && (current_user()['user_type'] ?? null) === 'super_admin') {
         $items[] = ['Institutions', '/super-admin/institutions', 'bi-buildings', null, 'Administration'];
     }
+    if ($context === 'admin' && (current_user()['user_type'] ?? null) !== 'super_admin') {
+        $institutionId = authenticated_institution_id(['super_admin', 'admin', 'staff']);
+        if ($institutionId !== null) {
+            $db = db_connect();
+            $statement = $db->prepare(
+                "SELECT COUNT(*) FROM information_schema.columns
+                 WHERE table_schema = DATABASE()
+                   AND table_name = 'institutions'
+                   AND column_name = 'academic_model'"
+            );
+            $statement->execute();
+            $hasAcademicModel = (int) $statement->get_result()->fetch_column() > 0;
+            $statement->close();
+            if ($hasAcademicModel) {
+                $statement = $db->prepare('SELECT academic_model FROM institutions WHERE id = ?');
+                $statement->bind_param('i', $institutionId);
+                $statement->execute();
+                $academicModel = $statement->get_result()->fetch_column();
+                $statement->close();
+            } else {
+                $academicModel = null;
+            }
+            if (is_string($academicModel)) {
+                $hiddenPaths = match ($academicModel) {
+                    'school' => ['/admin/courses/index', '/admin/batches/index', '/admin/academics/programmes'],
+                    'college', 'university' => ['/admin/batches/index', '/admin/academics/classes'],
+                    'coaching' => ['/admin/academics/classes'],
+                    default => [],
+                };
+                $items = array_values(array_filter(
+                    $items,
+                    static fn(array $item): bool => !in_array($item[1], $hiddenPaths, true)
+                ));
+            }
+        }
+    }
     $currentPath = (string) (parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH) ?: '');
     $basePath = rtrim((string) (parse_url(APP_URL, PHP_URL_PATH) ?: ''), '/');
     if ($basePath !== '' && str_starts_with($currentPath, $basePath . '/')) {
@@ -74,7 +114,9 @@ function render_sidebar_nav(string $context = 'admin'): void
             <?php $lastGroup = null; ?>
             <?php foreach ($items as $item): ?>
                 <?php [$label, $href, $icon] = array_slice($item, 0, 3); ?>
-                <?php if (isset($item[3]) && !user_has_compatible_permission($item[3], (string) ($item[5] ?? $item[3]))) { continue; } ?>
+                <?php if (isset($item[3])
+                    && !(($user = current_user()) !== null && $user['user_type'] === 'super_admin' && $href === '/admin/academics/classes')
+                    && !user_has_compatible_permission($item[3], (string) ($item[5] ?? $item[3]))) { continue; } ?>
                 <?php if ($href === '/admin/staff/permissions' && !in_array((current_user()['user_type'] ?? null), ['admin', 'super_admin'], true)) { continue; } ?>
                 <?php if ($href === '/admin/settings/institution' && (current_user()['user_type'] ?? null) === 'super_admin') { continue; } ?>
                 <?php $group = $item[4] ?? ($context === 'parent' ? null : 'Workspace'); ?>

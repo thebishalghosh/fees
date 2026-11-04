@@ -24,6 +24,29 @@ $check(
         && $validMarks['attendance'] === [12 => 'present', 18 => 'late'],
     'Validate selected cohort and normalize student attendance statuses'
 );
+$sessionMarks = attendance_validate_session_mark_input([
+    'academic_year_id' => '4',
+    'academic_group_id' => '12',
+    'attendance_date' => '2026-10-14',
+    'attendance' => ['18' => 'excused', '12' => 'present'],
+]);
+$check(
+    $sessionMarks['academic_group_id'] === 12
+        && $sessionMarks['attendance'] === [12 => 'present', 18 => 'excused'],
+    'Validate section/term/batch session attendance and excused statuses'
+);
+$invalidSessionMarksRejected = false;
+try {
+    attendance_validate_session_mark_input([
+        'academic_year_id' => '4',
+        'academic_group_id' => '12',
+        'attendance_date' => '2026-10-14',
+        'attendance' => ['18' => 'unknown'],
+    ]);
+} catch (InvalidArgumentException) {
+    $invalidSessionMarksRejected = true;
+}
+$check($invalidSessionMarksRejected, 'Reject unsupported session attendance statuses');
 $check(attendance_percentage(2, 3) === 66.67, 'Calculate student attendance percentage with two-decimal precision');
 $check(attendance_percentage(0, 0) === null, 'Leave attendance percentage unavailable with no recorded sessions');
 
@@ -95,6 +118,8 @@ try {
     $invalidParentFiltersRejected = true;
 }
 $check($invalidParentFiltersRejected, 'Reject invalid parent status and reversed date filters');
+$excusedParentFilter = attendance_validate_parent_filters(['status' => 'excused']);
+$check($excusedParentFilter['status'] === 'excused', 'Allow parents to filter excused session attendance');
 
 $service = file_get_contents(__DIR__ . '/../services/attendance-management-service.php');
 $route = file_get_contents(__DIR__ . '/../admin/academics/attendance.php');
@@ -153,8 +178,11 @@ if ($readable) {
             && str_contains($service, 'psr.parent_id = ?')
             && str_contains($service, 'psr.can_view_academics = 1')
             && str_contains($service, 'ar.institution_id = ?')
+            && str_contains($service, 'attendance_session_records')
+            && str_contains($service, 'academic_group_name')
+            && str_contains($parentRoute, "'excused'")
             && str_contains($parentRoute, 'attendance_parent_list_records('),
-        'Scope parent attendance reads by authenticated parent, academic permission, student, and institution'
+        'Show legacy and academic-session attendance only to the authenticated parent with academic access'
     );
 }
 

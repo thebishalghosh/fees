@@ -22,6 +22,7 @@ RewriteRule ^institution-logo/?$ public/institution-logo.php [END,QSA]
 
 # Keep the class creation handler outside the classes.php route namespace.
 RewriteRule ^admin/academics/classes/create/?$ admin/academics/create-class.php [END,QSA]
+RewriteRule ^admin/admissions/?$ admin/admissions/index.php [END,QSA]
 
 # Handle the trailing-slash URL Apache may have cached when a conflicting directory existed.
 RewriteRule ^admin/academics/classes/?$ admin/academics/classes.php [END,QSA]

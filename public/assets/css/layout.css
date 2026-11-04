@@ -480,6 +480,22 @@
     font-size: 1.45rem;
 }
 
+.admin-institution-context {
+    margin-top: -1rem;
+    border-radius: 12px;
+}
+
+.admin-institution-context form {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: end;
+    min-width: min(100%, 300px);
+}
+
+.admin-institution-context .form-select {
+    min-width: 240px;
+}
+
 .mobile-sidebar-control {
     display: none;
     margin-bottom: 1rem;
@@ -493,6 +509,18 @@
 
 .site-footer-app {
     margin-top: 3rem;
+}
+
+@media (max-width: 560px) {
+    .admin-institution-context form {
+        grid-template-columns: minmax(0, 1fr);
+        width: 100%;
+    }
+
+    .admin-institution-context .form-select {
+        min-width: 0;
+        width: 100%;
+    }
     padding: 1.3rem 0;
     background: #fff;
     color: var(--muted);

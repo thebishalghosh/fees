@@ -338,6 +338,16 @@ $courseForm = file_get_contents(__DIR__ . '/../includes/admin-course-form.php');
 $classCreateRoute = file_get_contents(__DIR__ . '/../admin/academics/create-class.php');
 $adminList = file_get_contents(__DIR__ . '/../includes/admin-simple-list.php');
 $adminPanelService = file_get_contents(__DIR__ . '/../services/admin-panel-service.php');
+$academicManagementService = file_get_contents(__DIR__ . '/../services/academic-management-service.php');
+$sidebarLayout = file_get_contents(__DIR__ . '/../includes/layouts/sidebar.php');
+$academicRoutes = [
+    file_get_contents(__DIR__ . '/../admin/academics/years.php'),
+    file_get_contents(__DIR__ . '/../admin/academics/classes.php'),
+    file_get_contents(__DIR__ . '/../admin/academics/programmes.php'),
+    file_get_contents(__DIR__ . '/../admin/academics/subjects.php'),
+    file_get_contents(__DIR__ . '/../admin/academics/enrolments.php'),
+    file_get_contents(__DIR__ . '/../admin/academics/attendance.php'),
+];
 $rewriteRules = file_get_contents(__DIR__ . '/../.htaccess');
 $check(
     is_string($batchCreateRoute)
@@ -354,7 +364,8 @@ $check(
     is_string($classCreateRoute)
         && str_contains($classCreateRoute, 'require_placeholder_route_access()')
         && str_contains($classCreateRoute, 'require_valid_csrf_token()')
-        && str_contains($classCreateRoute, 'admin_panel_institution_id()')
+        && str_contains($classCreateRoute, 'academic_management_resolve_institution_id')
+        && str_contains($classCreateRoute, 'institution_id')
         && str_contains($classCreateRoute, "route_url('/admin/academics/classes/create')")
         && str_contains($classCreateRoute, 'admin_panel_create_class'),
     'Protect class creation with existing authorization, CSRF, and institution context at the canonical URL'
@@ -375,6 +386,63 @@ $check(
         && str_contains($adminPanelService, 'SELECT id, name, code, status, created_at FROM classes WHERE institution_id = ?'),
     'Make institution-scoped new classes available in the existing batch form'
 );
+$check(
+    str_contains($adminPanelService, "if (\$academicModel === 'school')")
+        && str_contains($adminPanelService, "in_array(\$academicModel, ['college', 'university'], true)")
+        && str_contains($adminPanelService, 'academic administration uses classes and sections instead of courses')
+        && str_contains($adminPanelService, 'placement uses academic terms instead of batches'),
+    'Enforce model-specific restrictions on direct course and batch writes'
+);
+$check(
+    is_string($sidebarLayout)
+        && str_contains($sidebarLayout, 'information_schema.columns')
+        && str_contains($sidebarLayout, "column_name = 'academic_model'")
+        && str_contains($sidebarLayout, 'if ($hasAcademicModel)'),
+    'Keep the admin navigation usable before the academic-model migration is applied'
+);
+$check(
+    is_array($academicRoutes)
+        && !in_array(false, $academicRoutes, true)
+        && count(array_filter(
+            $academicRoutes,
+            static fn(string $route): bool => str_contains($route, 'academic_management_schema_ready($db)')
+                && str_contains($route, 'academic_management_render_schema_required_page()')
+        )) === count($academicRoutes)
+        && is_string($academicManagementService)
+        && str_contains($academicManagementService, 'database/migrations/20261104_add_academic_management.sql'),
+    'Explain the required migration instead of raising an uncaught error on academic pages'
+);
+$classManagementPage = is_array($academicRoutes) ? ($academicRoutes[1] ?? null) : null;
+$classManagementCss = file_get_contents(__DIR__ . '/../public/assets/css/pages/admin-academic-classes.css');
+$classCreationPage = file_get_contents(__DIR__ . '/../admin/academics/create-class.php');
+$authRoutes = file_get_contents(__DIR__ . '/../includes/auth.php');
+$check(
+    is_string($classManagementPage)
+        && str_contains($classManagementPage, 'Add a class for this year')
+        && str_contains($classManagementPage, 'academic-classes-create-button')
+        && str_contains($classManagementPage, 'Create class</a>')
+        && str_contains($classManagementPage, 'Add a section to')
+        && str_contains($classManagementPage, 'year_id')
+        && str_contains($classManagementPage, 'offeringGroups')
+        && str_contains($classManagementPage, 'institution_id')
+        && str_contains($classManagementPage, '$createClassUrl')
+        && str_contains($classManagementPage, 'update_class')
+        && str_contains($classManagementPage, 'update_section')
+        && str_contains($classManagementPage, 'Inactive (archive)')
+        && is_string($classManagementCss)
+        && str_contains($classManagementCss, '@media (max-width: 560px)')
+        && is_string($classCreationPage)
+        && str_contains($classCreationPage, 'institution_id')
+        && str_contains($academicManagementService, 'academic_management_resolve_institution_id')
+        && str_contains($academicManagementService, 'academic_management_institution_options')
+        && str_contains($adminPanelService, 'function admin_panel_update_class')
+        && str_contains($academicManagementService, 'function academic_management_update_section')
+        && str_contains($sidebarLayout, "!== 'super_admin'")
+        && str_contains($sidebarLayout, "\$href === '/admin/academics/classes'")
+        && is_string($authRoutes)
+        && str_contains($authRoutes, "'academics/classes.php', 'academics/create-class.php'"),
+    'Guide school users through class/section management and let super admins select the institution'
+);
 
 $feeStructureValues = admin_panel_validate_fee_structure([
     'name' => 'Annual fee',
@@ -387,6 +455,45 @@ $feeStructureValues = admin_panel_validate_fee_structure([
     'items' => ['3' => '1250.50'],
 ]);
 $check($feeStructureValues['total_amount'] === '1250.50', 'Calculate fee structure totals from selected category items');
+$customComponent = admin_panel_validate_fee_structure([
+    'name' => 'Term fee',
+    'description' => '',
+    'target_scope' => 'class:1:2:3',
+    'fee_group_code' => 'STANDARD',
+    'effective_from' => '2026-04-01',
+    'effective_until' => '',
+    'status' => 'active',
+    'category_ids' => ['3'],
+    'items' => ['3' => '1250.50'],
+    'frequencies' => ['3' => 'custom'],
+    'component_schedules' => ['3' => "2026-04-15, 500.00\n2026-07-15, 750.50"],
+]);
+$check(
+    $customComponent['target_model'] === 'class'
+        && $customComponent['academic_year_id'] === 1
+        && $customComponent['class_id'] === 2
+        && $customComponent['section_id'] === 3
+        && count($customComponent['items'][0]['schedule']) === 2,
+    'Validate a section-scoped custom fee schedule and preserve its component entries'
+);
+$customComponentMismatchRejected = false;
+try {
+    admin_panel_validate_fee_structure([
+        'name' => 'Term fee',
+        'description' => '',
+        'academic_year_id' => '1',
+        'course_id' => '',
+        'class_id' => '',
+        'status' => 'active',
+        'category_ids' => ['3'],
+        'items' => ['3' => '100.00'],
+        'frequencies' => ['3' => 'custom'],
+        'component_schedules' => ['3' => "2026-04-15, 40.00\n2026-07-15, 50.00"],
+    ]);
+} catch (InvalidArgumentException) {
+    $customComponentMismatchRejected = true;
+}
+$check($customComponentMismatchRejected, 'Reject custom component schedules whose amounts do not total the fee');
 
 $feeCategoryValues = admin_panel_validate_fee_category([
     'name' => 'Laboratory',

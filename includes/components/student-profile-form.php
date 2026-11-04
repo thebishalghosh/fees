@@ -87,8 +87,16 @@ function render_student_profile_form(
         <section class="students-form-section" aria-labelledby="student-academic-details">
             <div class="students-form-section-heading">
                 <h3 id="student-academic-details">Academic placement</h3>
-                <p>This schema provides courses, classes and batches; it has no separate sections table.</p>
+                <?php if (is_string($options['academic_model'] ?? null)): ?>
+                    <p><?php echo $editing
+                        ? 'Placement history is managed separately and cannot be changed from this profile.'
+                        : 'Create the student profile first, then assign its year and placement through Student Enrolments.'; ?></p>
+                    <a href="<?php echo e(route_url('/admin/academics/enrolments')); ?>">Manage student enrolments</a>
+                <?php else: ?>
+                    <p>This schema provides courses, classes and batches; it has no separate sections table.</p>
+                <?php endif; ?>
             </div>
+            <?php if (!is_string($options['academic_model'] ?? null)): ?>
             <div class="students-form-grid">
                 <label class="students-form-field">
                     <span>Academic year</span>
@@ -140,6 +148,7 @@ function render_student_profile_form(
                     <small>A selected batch must match the course and class above.</small>
                 </label>
             </div>
+            <?php endif; ?>
         </section>
 
         <section class="students-form-section" aria-labelledby="student-parents-heading">

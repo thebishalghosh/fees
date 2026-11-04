@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/csrf.php';
 require_once __DIR__ . '/audit-service.php';
+require_once __DIR__ . '/academic-management-service.php';
 
 const STUDENT_MANAGEMENT_PAGE_SIZE = 15;
 const STUDENT_MANAGEMENT_STATUSES = ['prospect', 'admitted', 'active', 'inactive', 'graduated', 'withdrawn'];
@@ -335,6 +336,13 @@ function student_management_list(
 function student_management_get_options(mysqli $db, int $institutionId): array
 {
     $options = [];
+    $configurationStatement = $db->prepare(
+        'SELECT academic_model FROM institutions WHERE id = ?'
+    );
+    $configurationStatement->bind_param('i', $institutionId);
+    $configurationStatement->execute();
+    $options['academic_model'] = $configurationStatement->get_result()->fetch_column();
+    $configurationStatement->close();
     $queries = [
         'academic_years' => "SELECT id, name, status FROM academic_years WHERE institution_id = ?
              ORDER BY (status = 'active') DESC, start_date DESC, name",
@@ -652,6 +660,12 @@ function student_management_create(
 ): int {
     $db->begin_transaction();
     try {
+        $configuration = academic_management_configuration($db, $institutionId);
+        if ($configuration['academic_model'] !== null
+            && ($profile['academic_year_id'] !== null || $profile['course_id'] !== null
+                || $profile['class_id'] !== null || $profile['batch_id'] !== null)) {
+            throw new DomainException('Use Student Enrolments to assign a configured academic placement.');
+        }
         student_management_assert_unique_code($db, $institutionId, $profile['student_code']);
         student_management_assert_references($db, $institutionId, $profile);
         student_management_valid_parent_ids($db, $institutionId, $parentIds);
@@ -729,32 +743,62 @@ function student_management_update(
         if ($old === null) {
             throw new OutOfBoundsException('The student record was not found in this institution.');
         }
-        $statement = $db->prepare(
-            'UPDATE students
-             SET academic_year_id = ?, course_id = ?, class_id = ?, batch_id = ?,
-                 student_code = ?, full_name = ?, date_of_birth = ?, gender = ?,
-                 admission_date = ?
-             WHERE institution_id = ? AND id = ?'
-        );
-        $statement->bind_param(
-            'iiiisssssii',
-            $profile['academic_year_id'],
-            $profile['course_id'],
-            $profile['class_id'],
-            $profile['batch_id'],
-            $profile['student_code'],
-            $profile['full_name'],
-            $profile['date_of_birth'],
-            $profile['gender'],
-            $profile['admission_date'],
-            $institutionId,
-            $studentId
-        );
+        $configuration = academic_management_configuration($db, $institutionId);
+        if ($configuration['academic_model'] !== null) {
+            foreach (['academic_year_id', 'course_id', 'class_id', 'batch_id'] as $field) {
+                if ($profile[$field] !== null && $profile[$field] !== $old[$field]) {
+                    throw new DomainException('Academic placement is managed through Student Enrolments.');
+                }
+            }
+            $statement = $db->prepare(
+                'UPDATE students
+                 SET student_code = ?, full_name = ?, date_of_birth = ?, gender = ?,
+                     admission_date = ?
+                 WHERE institution_id = ? AND id = ?'
+            );
+            $statement->bind_param(
+                'sssssii',
+                $profile['student_code'],
+                $profile['full_name'],
+                $profile['date_of_birth'],
+                $profile['gender'],
+                $profile['admission_date'],
+                $institutionId,
+                $studentId
+            );
+        } else {
+            $statement = $db->prepare(
+                'UPDATE students
+                 SET academic_year_id = ?, course_id = ?, class_id = ?, batch_id = ?,
+                     student_code = ?, full_name = ?, date_of_birth = ?, gender = ?,
+                     admission_date = ?
+                 WHERE institution_id = ? AND id = ?'
+            );
+            $statement->bind_param(
+                'iiiisssssii',
+                $profile['academic_year_id'],
+                $profile['course_id'],
+                $profile['class_id'],
+                $profile['batch_id'],
+                $profile['student_code'],
+                $profile['full_name'],
+                $profile['date_of_birth'],
+                $profile['gender'],
+                $profile['admission_date'],
+                $institutionId,
+                $studentId
+            );
+        }
         $statement->execute();
         $statement->close();
         student_management_sync_parents($db, $institutionId, $studentId, $parentIds);
         $updated = $profile;
         $updated['status'] = $old['status'];
+        if ($configuration['academic_model'] !== null) {
+            foreach (['academic_year_id', 'course_id', 'class_id', 'batch_id'] as $field) {
+                $updated[$field] = $old[$field];
+            }
+        }
         write_audit_log(
             $db,
             $institutionId,

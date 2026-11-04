@@ -108,9 +108,10 @@ if ($allSourcesReadable) {
     $check(str_contains($serviceSource, 'PARENT_MANAGEMENT_PAGE_SIZE'), 'Use server-side pagination for database results');
     $check(str_contains($serviceSource, 'function parent_management_resolve_parent_institution_id(')
         && str_contains($serviceSource, 'if (!parent_management_is_super_admin())')
-        && str_contains($serviceSource, 'JOIN institutions i ON i.id = p.institution_id'), 'Resolve tenant context for global Super Admin parent rows');
-    $check(str_contains($indexSource, '$isSuperAdmin ? null : $institutionId')
-        && str_contains($indexSource, '$parent[\'institution_name\']'), 'List all institutions’ parents for Super Admin and identify each tenant');
+        && str_contains($serviceSource, 'p.institution_id = ?')
+        && str_contains($serviceSource, 'admin_selected_institution_id()'), 'Resolve Super Admin parent rows only within the selected institution');
+    $check(str_contains($indexSource, 'parent_management_list($db, $institutionId')
+        && str_contains($indexSource, 'parent_management_get_summary($db, $institutionId)'), 'Keep parent listings and summaries scoped to the selected institution');
     $check(str_contains($viewSource, 'parent_management_resolve_parent_institution_id')
         && str_contains($editSource, 'parent_management_resolve_parent_institution_id')
         && str_contains($updatePageSource, 'parent_management_resolve_parent_institution_id')

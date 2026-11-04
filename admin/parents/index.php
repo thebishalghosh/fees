@@ -23,10 +23,8 @@ if (!in_array($link, ['', 'linked', 'unlinked'], true)) {
 }
 $requestedPage = filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT);
 $page = $requestedPage === false || $requestedPage < 1 ? 1 : $requestedPage;
-$isSuperAdmin = parent_management_is_super_admin();
-$listInstitutionId = $isSuperAdmin ? null : $institutionId;
 $summary = parent_management_get_summary($db, $institutionId);
-$result = parent_management_list($db, $listInstitutionId, $search, $status, $link, $page);
+$result = parent_management_list($db, $institutionId, $search, $status, $link, $page);
 $canCreate = user_has_compatible_permission('parents.create', 'parents.manage');
 $canManage = user_has_permission('parents.edit') || user_has_permission('parents.delete')
     || (($user = current_user()) !== null && ($user['role_is_system'] ?? true) && user_has_permission('parents.manage'));

@@ -8,11 +8,36 @@ function admin_panel_institution_id(): int
 {
     $institutionId = authenticated_institution_id(['super_admin', 'admin', 'staff']);
     if ($institutionId === null) {
-        http_response_code(403);
-        exit('Institution access is unavailable for this account.');
+        safe_redirect('/admin/dashboard?select_institution=1', 303);
+    }
+    $user = current_user();
+    if ($user !== null && $user['user_type'] === 'super_admin') {
+        $statement = db_connect()->prepare(
+            "SELECT id FROM institutions WHERE id = ? AND status <> 'archived' LIMIT 1"
+        );
+        $statement->bind_param('i', $institutionId);
+        $statement->execute();
+        $available = $statement->get_result()->fetch_column();
+        $statement->close();
+        if ($available === false) {
+            unset($_SESSION['admin_selected_institution_id']);
+            safe_redirect('/admin/dashboard?select_institution=1', 303);
+        }
     }
 
     return $institutionId;
+}
+
+function admin_panel_institution_options(mysqli $db): array
+{
+    $result = $db->query(
+        "SELECT id, name, status
+         FROM institutions
+         WHERE status <> 'archived'
+         ORDER BY name, id"
+    );
+
+    return $result->fetch_all(MYSQLI_ASSOC);
 }
 
 function admin_panel_scalar(mysqli $db, int $institutionId, string $query): int|string
@@ -744,6 +769,88 @@ function admin_panel_create_class(
     }
 }
 
+function admin_panel_update_class(
+    mysqli $db,
+    int $institutionId,
+    int $actorUserId,
+    int $classId,
+    array $values
+): void {
+    $db->begin_transaction();
+    try {
+        $statement = $db->prepare(
+            'SELECT name, code, description, status FROM classes
+             WHERE institution_id = ? AND id = ? FOR UPDATE'
+        );
+        $statement->bind_param('ii', $institutionId, $classId);
+        $statement->execute();
+        $before = $statement->get_result()->fetch_assoc();
+        $statement->close();
+        if (!is_array($before)) {
+            throw new OutOfBoundsException('The class is unavailable in this institution.');
+        }
+
+        $statement = $db->prepare(
+            'SELECT id FROM classes
+             WHERE institution_id = ? AND id <> ?
+               AND (name = ? OR (? IS NOT NULL AND code = ?))
+             LIMIT 1'
+        );
+        $statement->bind_param(
+            'iisss',
+            $institutionId,
+            $classId,
+            $values['name'],
+            $values['code'],
+            $values['code']
+        );
+        $statement->execute();
+        $duplicate = $statement->get_result()->fetch_assoc();
+        $statement->close();
+        if (is_array($duplicate)) {
+            throw new InvalidArgumentException('A class with this name or code already exists in this institution.');
+        }
+
+        $statement = $db->prepare(
+            'UPDATE classes SET name = ?, code = ?, description = ?, status = ?
+             WHERE institution_id = ? AND id = ?'
+        );
+        $statement->bind_param(
+            'ssssii',
+            $values['name'],
+            $values['code'],
+            $values['description'],
+            $values['status'],
+            $institutionId,
+            $classId
+        );
+        $statement->execute();
+        $statement->close();
+        write_audit_log(
+            $db,
+            $institutionId,
+            $actorUserId,
+            (string) (current_user()['user_type'] ?? 'admin'),
+            'class.updated',
+            'class',
+            (string) $classId,
+            $before,
+            $values
+        );
+        $db->commit();
+    } catch (Throwable $exception) {
+        $db->rollback();
+        if ($exception instanceof mysqli_sql_exception && (int) $exception->getCode() === 1062) {
+            throw new InvalidArgumentException(
+                'A class with this name or code already exists in this institution.',
+                0,
+                $exception
+            );
+        }
+        throw $exception;
+    }
+}
+
 function admin_panel_get_announcement_batches(mysqli $db, int $institutionId): array
 {
     return admin_panel_simple_list($db, $institutionId, 'batches');
@@ -1017,6 +1124,14 @@ function admin_panel_save_course(
     if ($courseId !== null && $before === null) {
         throw new OutOfBoundsException('Course not found.');
     }
+    $modelStatement = $db->prepare('SELECT academic_model FROM institutions WHERE id = ?');
+    $modelStatement->bind_param('i', $institutionId);
+    $modelStatement->execute();
+    $academicModel = $modelStatement->get_result()->fetch_column();
+    $modelStatement->close();
+    if ($academicModel === 'school') {
+        throw new DomainException('School academic administration uses classes and sections instead of courses.');
+    }
     $db->begin_transaction();
     try {
         if ($courseId === null) {
@@ -1085,19 +1200,24 @@ function admin_panel_course(mysqli $db, int $institutionId, int $courseId): ?arr
     return is_array($course) ? $course : null;
 }
 
-function admin_panel_validate_batch(array $input): array
+function admin_panel_validate_batch(array $input, string $academicModel = 'legacy'): array
 {
     $name = $input['name'] ?? null;
     $code = $input['code'] ?? null;
     $courseId = filter_var($input['course_id'] ?? null, FILTER_VALIDATE_INT);
-    $classId = filter_var($input['class_id'] ?? null, FILTER_VALIDATE_INT);
+    $classRaw = $input['class_id'] ?? '';
+    $classId = is_string($classRaw) && trim($classRaw) === ''
+        ? null
+        : (is_string($classRaw) || is_int($classRaw) ? filter_var($classRaw, FILTER_VALIDATE_INT) : false);
     $capacityValue = $input['capacity'] ?? '';
     $startTime = $input['start_time'] ?? '';
     $endTime = $input['end_time'] ?? '';
     $status = $input['status'] ?? 'active';
     if (!is_string($name) || !is_string($code) || !is_string($capacityValue)
         || !is_string($startTime) || !is_string($endTime) || !is_string($status)
-        || $courseId === false || $classId === false || $courseId < 1 || $classId < 1) {
+        || $courseId === false || $courseId < 1
+        || $classId === false || ($classId !== null && $classId < 1)
+        || ($classId === null && $academicModel !== 'coaching')) {
         throw new InvalidArgumentException('The batch form contains invalid values.');
     }
     $name = trim($name);
@@ -1162,19 +1282,38 @@ function admin_panel_save_batch(
     if ($batchId !== null && $before === null) {
         throw new OutOfBoundsException('Batch not found.');
     }
+    $statement = $db->prepare('SELECT academic_model FROM institutions WHERE id = ?');
+    $statement->bind_param('i', $institutionId);
+    $statement->execute();
+    $institution = $statement->get_result()->fetch_assoc();
+    $statement->close();
+    if (!is_array($institution)) {
+        throw new OutOfBoundsException('The institution was not found.');
+    }
+    $academicModel = $institution['academic_model'];
+    if ($academicModel === 'school') {
+        throw new DomainException('School academic administration uses classes and sections instead of batches.');
+    }
+    if (in_array($academicModel, ['college', 'university'], true)) {
+        throw new DomainException('College and university placement uses academic terms instead of batches.');
+    }
+    if ($values['class_id'] === null && $academicModel !== 'coaching') {
+        throw new InvalidArgumentException('Choose a class for this batch.');
+    }
     $statement = $db->prepare(
         'SELECT
             (SELECT COUNT(*) FROM courses WHERE institution_id = ? AND id = ?) AS course_count,
             (SELECT COUNT(*) FROM classes WHERE institution_id = ? AND id = ?) AS class_count'
     );
     $courseId = (int) $values['course_id'];
-    $classId = (int) $values['class_id'];
+    $classId = $values['class_id'] === null ? 0 : (int) $values['class_id'];
     $statement->bind_param('iiii', $institutionId, $courseId, $institutionId, $classId);
     $statement->execute();
     $valid = $statement->get_result()->fetch_assoc();
     $statement->close();
-    if (!is_array($valid) || (int) $valid['course_count'] !== 1 || (int) $valid['class_count'] !== 1) {
-        throw new InvalidArgumentException('Select a course and class from this institution.');
+    if (!is_array($valid) || (int) $valid['course_count'] !== 1
+        || ($values['class_id'] !== null && (int) $valid['class_count'] !== 1)) {
+        throw new InvalidArgumentException('Select academic records from this institution.');
     }
     $db->begin_transaction();
     try {
@@ -1238,8 +1377,77 @@ function admin_panel_save_batch(
     }
 }
 
-function admin_panel_validate_fee_structure(array $input): array
+function admin_panel_fee_scope_options(mysqli $db, int $institutionId, ?string $academicModel): array
     {
+    if ($academicModel === 'school') {
+        $query = "SELECT CONCAT('class:', yc.academic_year_id, ':', yc.class_id, ':0') AS scope_value,
+                         CONCAT(ay.name, ' / ', c.name, ' / whole class') AS label
+                  FROM academic_year_classes yc
+                  JOIN academic_years ay ON ay.institution_id = yc.institution_id
+                    AND ay.id = yc.academic_year_id AND ay.status <> 'closed'
+                  JOIN classes c ON c.institution_id = yc.institution_id AND c.id = yc.class_id
+                  WHERE yc.institution_id = ?
+                  UNION ALL
+                  SELECT CONCAT('class:', yc.academic_year_id, ':', yc.class_id, ':', s.id),
+                         CONCAT(ay.name, ' / ', c.name, ' / ', s.name)
+                  FROM academic_year_classes yc
+                  JOIN academic_years ay ON ay.institution_id = yc.institution_id
+                    AND ay.id = yc.academic_year_id AND ay.status <> 'closed'
+                  JOIN classes c ON c.institution_id = yc.institution_id AND c.id = yc.class_id
+                  JOIN sections s ON s.institution_id = yc.institution_id
+                    AND s.academic_year_id = yc.academic_year_id AND s.class_id = yc.class_id
+                    AND s.status = 'active'
+                  WHERE yc.institution_id = ?
+                  ORDER BY label";
+        $statement = $db->prepare($query);
+        $statement->bind_param('ii', $institutionId, $institutionId);
+    } elseif (in_array($academicModel, ['college', 'university'], true)) {
+        $query = "SELECT CONCAT('course:', yc.academic_year_id, ':', yc.course_id, ':0') AS scope_value,
+                         CONCAT(ay.name, ' / ', c.name, ' / whole programme') AS label
+                  FROM academic_year_courses yc
+                  JOIN academic_years ay ON ay.institution_id = yc.institution_id
+                    AND ay.id = yc.academic_year_id AND ay.status <> 'closed'
+                  JOIN courses c ON c.institution_id = yc.institution_id AND c.id = yc.course_id
+                  WHERE yc.institution_id = ?
+                  UNION ALL
+                  SELECT CONCAT('term:', yc.academic_year_id, ':', yc.course_id, ':', t.id),
+                         CONCAT(ay.name, ' / ', c.name, ' / ', t.name)
+                  FROM academic_year_courses yc
+                  JOIN academic_years ay ON ay.institution_id = yc.institution_id
+                    AND ay.id = yc.academic_year_id AND ay.status <> 'closed'
+                  JOIN courses c ON c.institution_id = yc.institution_id AND c.id = yc.course_id
+                  JOIN academic_terms t ON t.institution_id = yc.institution_id
+                    AND t.academic_year_id = yc.academic_year_id AND t.course_id = yc.course_id
+                    AND t.status <> 'closed'
+                  WHERE yc.institution_id = ?
+                  ORDER BY label";
+        $statement = $db->prepare($query);
+        $statement->bind_param('ii', $institutionId, $institutionId);
+    } elseif ($academicModel === 'coaching') {
+        $statement = $db->prepare(
+            "SELECT CONCAT('batch:', yc.academic_year_id, ':', yc.course_id, ':', b.id) AS scope_value,
+                    CONCAT(ay.name, ' / ', c.name, ' / ', b.name) AS label
+             FROM academic_year_courses yc
+             JOIN academic_years ay ON ay.institution_id = yc.institution_id
+               AND ay.id = yc.academic_year_id AND ay.status <> 'closed'
+             JOIN courses c ON c.institution_id = yc.institution_id AND c.id = yc.course_id
+             JOIN batches b ON b.institution_id = yc.institution_id AND b.course_id = yc.course_id
+               AND b.status IN ('active','full')
+             WHERE yc.institution_id = ?
+             ORDER BY ay.start_date DESC, c.name, b.name"
+        );
+        $statement->bind_param('i', $institutionId);
+    } else {
+        return [];
+    }
+    $statement->execute();
+    $rows = $statement->get_result()->fetch_all(MYSQLI_ASSOC);
+    $statement->close();
+    return $rows;
+}
+
+function admin_panel_validate_fee_structure(array $input): array
+{
         $name = $input['name'] ?? null;
         $description = $input['description'] ?? '';
         $academicYearId = filter_var($input['academic_year_id'] ?? null, FILTER_VALIDATE_INT);
@@ -1247,11 +1455,16 @@ function admin_panel_validate_fee_structure(array $input): array
         $classValue = $input['class_id'] ?? '';
         $courseId = $courseValue === '' ? null : filter_var($courseValue, FILTER_VALIDATE_INT);
         $classId = $classValue === '' ? null : filter_var($classValue, FILTER_VALIDATE_INT);
+        $scopeInput = $input['target_scope'] ?? '';
+        $isStructuredScope = is_string($scopeInput) && $scopeInput !== '';
         $status = $input['status'] ?? 'draft';
         $rawItems = $input['items'] ?? null;
         $selectedCategories = $input['category_ids'] ?? [];
+        $rawFrequencies = $input['frequencies'] ?? [];
+        $rawSchedules = $input['component_schedules'] ?? [];
         $items = [];
-        if (!is_array($selectedCategories) || !is_array($rawItems)) {
+        if (!is_array($selectedCategories) || !is_array($rawItems)
+            || !is_array($rawFrequencies) || !is_array($rawSchedules)) {
             throw new InvalidArgumentException('The fee structure items are invalid.');
         }
         if (is_array($selectedCategories) && is_array($rawItems)) {
@@ -1268,7 +1481,8 @@ function admin_panel_validate_fee_structure(array $input): array
             }
         }
         if (!is_string($name) || !is_string($description) || !is_string($status)
-            || !is_array($rawItems) || $academicYearId === false || $academicYearId < 1
+            || !is_array($rawItems)
+            || (!$isStructuredScope && ($academicYearId === false || $academicYearId < 1))
             || ($courseValue !== '' && ($courseId === false || $courseId < 1))
             || ($classValue !== '' && ($classId === false || $classId < 1))) {
             throw new InvalidArgumentException('The fee structure form contains invalid values.');
@@ -1302,14 +1516,136 @@ function admin_panel_validate_fee_structure(array $input): array
             $normalizedItems[] = [
                 'category_id' => $categoryId,
                 'amount' => intdiv($amountCents, 100) . '.' . str_pad((string) ($amountCents % 100), 2, '0', STR_PAD_LEFT),
+                'frequency' => null,
+                'schedule' => [],
             ];
+            $itemIndex = array_key_last($normalizedItems);
+            $rawFrequency = $rawFrequencies[(string) $categoryId] ?? null;
+            if ($rawFrequency !== null) {
+                if (!is_string($rawFrequency)
+                    || !in_array($rawFrequency, ['one_time', 'monthly', 'quarterly', 'half_yearly', 'yearly', 'custom'], true)) {
+                    throw new InvalidArgumentException('Choose a supported frequency for each fee component.');
+                }
+                $normalizedItems[$itemIndex]['frequency'] = $rawFrequency;
+            }
+            $rawSchedule = $rawSchedules[(string) $categoryId] ?? '';
+            if (!is_string($rawSchedule)) {
+                throw new InvalidArgumentException('Enter a valid custom component schedule.');
+            }
+            $scheduleText = trim($rawSchedule);
+            if ($normalizedItems[$itemIndex]['frequency'] === 'custom') {
+                if ($scheduleText === '') {
+                    throw new InvalidArgumentException('Enter at least one date and amount for each custom component schedule.');
+                }
+                $scheduleTotalCents = 0;
+                $scheduleLines = preg_split('/\r\n|\r|\n/', $scheduleText);
+                if (!is_array($scheduleLines) || count($scheduleLines) > 120) {
+                    throw new InvalidArgumentException('A custom component schedule may contain no more than 120 entries.');
+                }
+                $previousDueDate = null;
+                foreach ($scheduleLines as $index => $line) {
+                    if (preg_match('/^(\d{4}-\d{2}-\d{2})\s*,\s*([0-9]{1,10}(?:\.[0-9]{1,2})?)$/D', trim($line), $parts) !== 1) {
+                        throw new InvalidArgumentException('Enter each custom schedule entry as YYYY-MM-DD, amount.');
+                    }
+                    $date = DateTimeImmutable::createFromFormat('!Y-m-d', $parts[1]);
+                    if ($date === false || $date->format('Y-m-d') !== $parts[1]) {
+                        throw new InvalidArgumentException('A custom component schedule contains an invalid date.');
+                    }
+                    if ($previousDueDate !== null && $parts[1] <= $previousDueDate) {
+                        throw new InvalidArgumentException('Custom component schedule dates must be strictly increasing.');
+                    }
+                    $entryCents = admin_panel_decimal_cents($parts[2]);
+                    if ($entryCents < 1) {
+                        throw new InvalidArgumentException('Custom component schedule amounts must be positive.');
+                    }
+                    $scheduleTotalCents += $entryCents;
+                    $normalizedItems[$itemIndex]['schedule'][] = [
+                        'installment_number' => $index + 1,
+                        'due_date' => $parts[1],
+                        'amount' => intdiv($entryCents, 100) . '.' . str_pad((string) ($entryCents % 100), 2, '0', STR_PAD_LEFT),
+                    ];
+                    $previousDueDate = $parts[1];
+                }
+                if ($scheduleTotalCents !== $amountCents) {
+                    throw new InvalidArgumentException('Custom schedule amounts must equal the fee component total.');
+                }
+            } elseif ($scheduleText !== '') {
+                throw new InvalidArgumentException('Custom schedule rows are supported only for custom-frequency components.');
+            }
+        }
+        $targetModel = 'legacy';
+        $scope = ['academic_year_id' => $academicYearId, 'course_id' => $courseId, 'class_id' => $classId,
+            'section_id' => null, 'academic_term_id' => null, 'batch_id' => null];
+        $yearClassId = null;
+        $yearCourseId = null;
+        $feeGroupCode = null;
+        $effectiveFrom = null;
+        $effectiveUntil = null;
+        if ($scopeInput !== '') {
+            if (!is_string($scopeInput)
+                || preg_match('/^(class|course|term|batch):([1-9][0-9]*):([1-9][0-9]*):(0|[1-9][0-9]*)$/D', $scopeInput, $parts) !== 1) {
+                throw new InvalidArgumentException('Choose a valid academic fee scope.');
+            }
+            $targetModel = $parts[1];
+            $scopeYearId = filter_var($parts[2], FILTER_VALIDATE_INT);
+            $scopeOwnerId = filter_var($parts[3], FILTER_VALIDATE_INT);
+            $scopeTargetId = filter_var($parts[4], FILTER_VALIDATE_INT);
+            if ($scopeYearId === false || $scopeYearId < 1 || $scopeOwnerId === false || $scopeOwnerId < 1
+                || $scopeTargetId === false || $scopeTargetId < 0) {
+                throw new InvalidArgumentException('Choose a valid academic fee scope.');
+            }
+            $scope['academic_year_id'] = (int) $scopeYearId;
+            if ($targetModel === 'class') {
+                $scope['course_id'] = null;
+                $scope['class_id'] = (int) $scopeOwnerId;
+                $scope['section_id'] = $scopeTargetId > 0 ? (int) $scopeTargetId : null;
+            } else {
+                $scope['course_id'] = (int) $scopeOwnerId;
+                $scope['class_id'] = null;
+                if ($targetModel === 'term') {
+                    if ($scopeTargetId < 1) {
+                        throw new InvalidArgumentException('Choose a term-specific or programme-wide fee scope.');
+                    }
+                    $scope['academic_term_id'] = (int) $scopeTargetId;
+                } elseif ($targetModel === 'batch') {
+                    if ($scopeTargetId < 1) {
+                        throw new InvalidArgumentException('Choose a valid coaching batch scope.');
+                    }
+                    $scope['batch_id'] = (int) $scopeTargetId;
+                } elseif ($scopeTargetId !== 0) {
+                    throw new InvalidArgumentException('Choose a programme-wide fee scope.');
+                }
+            }
+            $feeGroupCode = $input['fee_group_code'] ?? null;
+            $effectiveFrom = $input['effective_from'] ?? null;
+            $effectiveUntil = $input['effective_until'] ?? '';
+            if (!is_string($feeGroupCode) || preg_match('/^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/D', $feeGroupCode) !== 1
+                || !is_string($effectiveFrom) || !is_string($effectiveUntil)) {
+                throw new InvalidArgumentException('Enter a valid fee group and effective date range.');
+            }
+            $start = DateTimeImmutable::createFromFormat('!Y-m-d', $effectiveFrom);
+            $end = $effectiveUntil === '' ? null : DateTimeImmutable::createFromFormat('!Y-m-d', $effectiveUntil);
+            if ($start === false || $start->format('Y-m-d') !== $effectiveFrom
+                || ($effectiveUntil !== '' && ($end === false || $end->format('Y-m-d') !== $effectiveUntil))
+                || ($end !== null && $end < $start)) {
+                throw new InvalidArgumentException('Enter a valid fee scope effective date range.');
+            }
+            $effectiveUntil = $effectiveUntil === '' ? null : $effectiveUntil;
         }
         return [
             'name' => $name,
             'description' => $description === '' ? null : $description,
-            'academic_year_id' => $academicYearId,
-            'course_id' => $courseId,
-            'class_id' => $classId,
+            'academic_year_id' => $scope['academic_year_id'],
+            'course_id' => $scope['course_id'],
+            'class_id' => $scope['class_id'],
+            'section_id' => $scope['section_id'],
+            'academic_term_id' => $scope['academic_term_id'],
+            'batch_id' => $scope['batch_id'],
+            'target_model' => $targetModel,
+            'target_scope' => $scopeInput,
+            'fee_group_code' => $feeGroupCode,
+            'effective_from' => $effectiveFrom,
+            'effective_until' => $effectiveUntil,
             'status' => $status,
             'items' => $normalizedItems,
             'total_amount' => intdiv($totalCents, 100) . '.' . str_pad((string) ($totalCents % 100), 2, '0', STR_PAD_LEFT),
@@ -1319,7 +1655,9 @@ function admin_panel_validate_fee_structure(array $input): array
     function admin_panel_fee_structure(mysqli $db, int $institutionId, int $structureId): ?array
     {
         $statement = $db->prepare(
-            'SELECT id, name, description, academic_year_id, course_id, class_id, status
+            'SELECT id, name, description, academic_year_id, course_id, class_id, status,
+                    section_id, academic_term_id, batch_id, year_class_id, year_course_id,
+                    fee_group_code, effective_from, effective_until, target_model
              FROM fee_structures WHERE institution_id = ? AND id = ? LIMIT 1'
         );
         $statement->bind_param('ii', $institutionId, $structureId);
@@ -1330,13 +1668,27 @@ function admin_panel_validate_fee_structure(array $input): array
             return null;
         }
         $statement = $db->prepare(
-            'SELECT category_id, amount FROM fee_structure_items
+            'SELECT id, category_id, amount, frequency, description, status FROM fee_structure_items
              WHERE institution_id = ? AND fee_structure_id = ? ORDER BY sort_order, id'
         );
         $statement->bind_param('ii', $institutionId, $structureId);
         $statement->execute();
         $structure['items'] = $statement->get_result()->fetch_all(MYSQLI_ASSOC);
         $statement->close();
+        foreach ($structure['items'] as &$item) {
+            $scheduleStatement = $db->prepare(
+                'SELECT installment_number, due_date, amount
+                 FROM fee_component_schedule
+                 WHERE institution_id = ? AND fee_structure_item_id = ? AND status = \'active\'
+                 ORDER BY installment_number'
+            );
+            $itemId = (int) $item['id'];
+            $scheduleStatement->bind_param('ii', $institutionId, $itemId);
+            $scheduleStatement->execute();
+            $item['schedule'] = $scheduleStatement->get_result()->fetch_all(MYSQLI_ASSOC);
+            $scheduleStatement->close();
+        }
+        unset($item);
         return $structure;
     }
 
@@ -1374,6 +1726,159 @@ function admin_panel_validate_fee_structure(array $input): array
                     throw new DomainException('A fee structure with student assignments is immutable.');
                 }
                 $before = admin_panel_fee_structure($db, $institutionId, $structureId);
+            }
+
+            $yearClassId = null;
+            $yearCourseId = null;
+            $targetScopeKind = null;
+            $targetScopeId = null;
+            if ($values['target_model'] !== 'legacy') {
+                $scopeParts = explode(':', (string) $values['target_scope']);
+                $scopeYearId = (int) $scopeParts[1];
+                $scopeOwnerId = (int) $scopeParts[2];
+                $scopeTargetId = (int) $scopeParts[3];
+                $institutionStatement = $db->prepare(
+                    'SELECT academic_model FROM institutions WHERE id = ? FOR UPDATE'
+                );
+                $institutionStatement->bind_param('i', $institutionId);
+                $institutionStatement->execute();
+                $institutionModel = $institutionStatement->get_result()->fetch_column();
+                $institutionStatement->close();
+                $modelAllowed = match ($values['target_model']) {
+                    'class' => $institutionModel === 'school',
+                    'course', 'term' => in_array($institutionModel, ['college', 'university'], true),
+                    'batch' => $institutionModel === 'coaching',
+                    default => false,
+                };
+                if (!$modelAllowed) {
+                    throw new DomainException('The fee scope does not match this institution academic model.');
+                }
+                if ($values['target_model'] === 'class') {
+                    $statement = $db->prepare(
+                        "SELECT yc.id FROM academic_year_classes yc
+                         JOIN academic_years ay
+                           ON ay.institution_id = yc.institution_id AND ay.id = yc.academic_year_id
+                         WHERE yc.institution_id = ? AND yc.academic_year_id = ? AND yc.class_id = ?
+                           AND ay.status <> 'closed' FOR UPDATE"
+                    );
+                    $statement->bind_param('iii', $institutionId, $scopeYearId, $scopeOwnerId);
+                    $statement->execute();
+                    $offering = $statement->get_result()->fetch_assoc();
+                    $statement->close();
+                    if (!is_array($offering)) {
+                        throw new OutOfBoundsException('Offer the selected class in a non-closed academic year first.');
+                    }
+                    $yearClassId = (int) $offering['id'];
+                    $targetScopeKind = $scopeTargetId > 0 ? 'section' : 'class';
+                    $targetScopeId = $scopeTargetId > 0 ? $scopeTargetId : $scopeOwnerId;
+                    if ($scopeTargetId > 0) {
+                        $statement = $db->prepare(
+                            "SELECT id FROM sections
+                             WHERE institution_id = ? AND academic_year_id = ? AND class_id = ?
+                               AND id = ? AND status = 'active' FOR UPDATE"
+                        );
+                        $statement->bind_param('iiii', $institutionId, $scopeYearId, $scopeOwnerId, $scopeTargetId);
+                        $statement->execute();
+                        $section = $statement->get_result()->fetch_assoc();
+                        $statement->close();
+                        if (!is_array($section)) {
+                            throw new OutOfBoundsException('Choose an active section belonging to the selected class and year.');
+                        }
+                    }
+                } else {
+                    $statement = $db->prepare(
+                        "SELECT yc.id FROM academic_year_courses yc
+                         JOIN academic_years ay
+                           ON ay.institution_id = yc.institution_id AND ay.id = yc.academic_year_id
+                         WHERE yc.institution_id = ? AND yc.academic_year_id = ? AND yc.course_id = ?
+                           AND ay.status <> 'closed' FOR UPDATE"
+                    );
+                    $statement->bind_param('iii', $institutionId, $scopeYearId, $scopeOwnerId);
+                    $statement->execute();
+                    $offering = $statement->get_result()->fetch_assoc();
+                    $statement->close();
+                    if (!is_array($offering)) {
+                        throw new OutOfBoundsException('Offer the selected programme in a non-closed academic year first.');
+                    }
+                    $yearCourseId = (int) $offering['id'];
+                    $targetScopeKind = match ($values['target_model']) {
+                        'course' => 'course',
+                        'term' => 'term',
+                        'batch' => 'batch',
+                        default => throw new InvalidArgumentException('Choose a supported programme fee scope.'),
+                    };
+                    $targetScopeId = $scopeTargetId > 0 ? $scopeTargetId : $scopeOwnerId;
+                    if ($values['target_model'] === 'term') {
+                        $statement = $db->prepare(
+                            "SELECT id FROM academic_terms
+                             WHERE institution_id = ? AND academic_year_id = ? AND course_id = ?
+                               AND id = ? AND status <> 'closed' FOR UPDATE"
+                        );
+                        $statement->bind_param('iiii', $institutionId, $scopeYearId, $scopeOwnerId, $scopeTargetId);
+                        $statement->execute();
+                        $term = $statement->get_result()->fetch_assoc();
+                        $statement->close();
+                        if (!is_array($term)) {
+                            throw new OutOfBoundsException('Choose a term belonging to the selected programme and year.');
+                        }
+                    } elseif ($values['target_model'] === 'batch') {
+                        $statement = $db->prepare(
+                            "SELECT id FROM batches
+                             WHERE institution_id = ? AND course_id = ? AND id = ?
+                               AND status IN ('active','full') FOR UPDATE"
+                        );
+                        $statement->bind_param('iii', $institutionId, $scopeOwnerId, $scopeTargetId);
+                        $statement->execute();
+                        $batch = $statement->get_result()->fetch_assoc();
+                        $statement->close();
+                        if (!is_array($batch)) {
+                            throw new OutOfBoundsException('Choose an active batch belonging to the selected programme.');
+                        }
+                    }
+                }
+                $guardStatement = $db->prepare(
+                    'INSERT INTO fee_structure_scope_guards
+                        (institution_id, academic_year_id, target_scope_kind, target_scope_id, fee_group_code)
+                     VALUES (?, ?, ?, ?, ?)
+                     ON DUPLICATE KEY UPDATE fee_group_code = VALUES(fee_group_code)'
+                );
+                $guardStatement->bind_param(
+                    'iisis',
+                    $institutionId,
+                    $scopeYearId,
+                    $targetScopeKind,
+                    $targetScopeId,
+                    $values['fee_group_code']
+                );
+                $guardStatement->execute();
+                $guardStatement->close();
+                $statement = $db->prepare(
+                    "SELECT id FROM fee_structures
+                     WHERE institution_id = ? AND academic_year_id = ?
+                       AND target_scope_kind = ? AND target_scope_id = ? AND fee_group_code = ?
+                       AND status = 'active' AND effective_from <= ?
+                       AND (effective_until IS NULL OR effective_until >= ?)
+                       AND id <> ?
+                     LIMIT 1 FOR UPDATE"
+                );
+                $excludeId = $structureId ?? 0;
+                $statement->bind_param(
+                    'iisisssi',
+                    $institutionId,
+                    $scopeYearId,
+                    $targetScopeKind,
+                    $targetScopeId,
+                    $values['fee_group_code'],
+                    $values['effective_until'] ?? '9999-12-31',
+                    $values['effective_from'],
+                    $excludeId
+                );
+                $statement->execute();
+                $overlap = $statement->get_result()->fetch_assoc();
+                $statement->close();
+                if (is_array($overlap) && $values['status'] === 'active') {
+                    throw new DomainException('An active fee structure already covers part of this scope and effective date range.');
+                }
             }
 
             $referenceChecks = [
@@ -1418,15 +1923,26 @@ function admin_panel_validate_fee_structure(array $input): array
             if ($structureId === null) {
                 $statement = $db->prepare(
                     'INSERT INTO fee_structures
-                        (institution_id, academic_year_id, course_id, class_id, name, description, total_amount, status)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+                        (institution_id, academic_year_id, course_id, class_id, section_id, academic_term_id,
+                         batch_id, year_class_id, year_course_id, fee_group_code, effective_from, effective_until,
+                         target_model, name, description, total_amount, status)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
                 );
                 $statement->bind_param(
-                    'iiiissss',
+                    str_repeat('i', 9) . str_repeat('s', 8),
                     $institutionId,
                     $values['academic_year_id'],
                     $values['course_id'],
                     $values['class_id'],
+                    $values['section_id'],
+                    $values['academic_term_id'],
+                    $values['batch_id'],
+                    $yearClassId,
+                    $yearCourseId,
+                    $values['fee_group_code'],
+                    $values['effective_from'],
+                    $values['effective_until'],
+                    $values['target_model'],
                     $values['name'],
                     $values['description'],
                     $values['total_amount'],
@@ -1435,14 +1951,25 @@ function admin_panel_validate_fee_structure(array $input): array
             } else {
                 $statement = $db->prepare(
                     'UPDATE fee_structures SET academic_year_id = ?, course_id = ?, class_id = ?,
+                        section_id = ?, academic_term_id = ?, batch_id = ?, year_class_id = ?, year_course_id = ?,
+                        fee_group_code = ?, effective_from = ?, effective_until = ?, target_model = ?,
                         name = ?, description = ?, total_amount = ?, status = ?
                      WHERE institution_id = ? AND id = ?'
                 );
                 $statement->bind_param(
-                    'iiissssii',
+                    'iiiiiiiissssssssii',
                     $values['academic_year_id'],
                     $values['course_id'],
                     $values['class_id'],
+                    $values['section_id'],
+                    $values['academic_term_id'],
+                    $values['batch_id'],
+                    $yearClassId,
+                    $yearCourseId,
+                    $values['fee_group_code'],
+                    $values['effective_from'],
+                    $values['effective_until'],
+                    $values['target_model'],
                     $values['name'],
                     $values['description'],
                     $values['total_amount'],
@@ -1456,6 +1983,16 @@ function admin_panel_validate_fee_structure(array $input): array
             $statement->close();
             if ($structureId !== null) {
                 $statement = $db->prepare(
+                    'DELETE schedule FROM fee_component_schedule schedule
+                     JOIN fee_structure_items item
+                       ON item.institution_id = schedule.institution_id
+                      AND item.id = schedule.fee_structure_item_id
+                     WHERE item.institution_id = ? AND item.fee_structure_id = ?'
+                );
+                $statement->bind_param('ii', $institutionId, $structureId);
+                $statement->execute();
+                $statement->close();
+                $statement = $db->prepare(
                     'DELETE FROM fee_structure_items WHERE institution_id = ? AND fee_structure_id = ?'
                 );
                 $statement->bind_param('ii', $institutionId, $structureId);
@@ -1464,15 +2001,39 @@ function admin_panel_validate_fee_structure(array $input): array
             }
             $statement = $db->prepare(
                 'INSERT INTO fee_structure_items
-                    (institution_id, fee_structure_id, category_id, amount, sort_order)
-                 VALUES (?, ?, ?, ?, ?)'
+                    (institution_id, fee_structure_id, category_id, amount, frequency, status, sort_order)
+                 VALUES (?, ?, ?, ?, ?, \'active\', ?)'
             );
             foreach ($values['items'] as $sortOrder => $item) {
                 $categoryId = (int) $item['category_id'];
                 $amount = (string) $item['amount'];
+                $frequency = $item['frequency'];
                 $order = (int) $sortOrder;
-                $statement->bind_param('iiisi', $institutionId, $savedId, $categoryId, $amount, $order);
+                $statement->bind_param('iiissi', $institutionId, $savedId, $categoryId, $amount, $frequency, $order);
                 $statement->execute();
+                $itemId = (int) $statement->insert_id;
+                if ($item['schedule'] !== []) {
+                    $scheduleStatement = $db->prepare(
+                        "INSERT INTO fee_component_schedule
+                            (institution_id, fee_structure_item_id, installment_number, due_date, amount, status)
+                         VALUES (?, ?, ?, ?, ?, 'active')"
+                    );
+                    foreach ($item['schedule'] as $schedule) {
+                        $number = (int) $schedule['installment_number'];
+                        $dueDate = (string) $schedule['due_date'];
+                        $scheduleAmount = (string) $schedule['amount'];
+                        $scheduleStatement->bind_param(
+                            'iiiss',
+                            $institutionId,
+                            $itemId,
+                            $number,
+                            $dueDate,
+                            $scheduleAmount
+                        );
+                        $scheduleStatement->execute();
+                    }
+                    $scheduleStatement->close();
+                }
             }
             $statement->close();
             $actor = current_user();
@@ -1685,27 +2246,55 @@ function admin_panel_set_academic_year_status(
     if ($yearId < 1 || !in_array($status, ['active', 'closed'], true)) {
         throw new InvalidArgumentException('The academic-year action is invalid.');
     }
-    $statement = $db->prepare(
-        'SELECT status FROM academic_years WHERE institution_id = ? AND id = ? LIMIT 1'
-    );
-    $statement->bind_param('ii', $institutionId, $yearId);
-    $statement->execute();
-    $before = $statement->get_result()->fetch_assoc();
-    $statement->close();
-    if (!is_array($before)) {
-        throw new OutOfBoundsException('Academic year not found.');
-    }
-    if ($before['status'] === 'closed' || ($before['status'] === 'active' && $status === 'active')) {
-        throw new DomainException('This academic-year status transition is not allowed.');
-    }
     $db->begin_transaction();
     try {
+        $statement = $db->prepare('SELECT id FROM institutions WHERE id = ? FOR UPDATE');
+        $statement->bind_param('i', $institutionId);
+        $statement->execute();
+        $institution = $statement->get_result()->fetch_assoc();
+        $statement->close();
+        if (!is_array($institution)) {
+            throw new OutOfBoundsException('The institution was not found.');
+        }
+        $statement = $db->prepare(
+            'SELECT status FROM academic_years
+             WHERE institution_id = ? AND id = ? FOR UPDATE'
+        );
+        $statement->bind_param('ii', $institutionId, $yearId);
+        $statement->execute();
+        $before = $statement->get_result()->fetch_assoc();
+        $statement->close();
+        if (!is_array($before)) {
+            throw new OutOfBoundsException('Academic year not found.');
+        }
+        if ($before['status'] === 'closed' || ($before['status'] === 'active' && $status === 'active')) {
+            throw new DomainException('This academic-year status transition is not allowed.');
+        }
         $statement = $db->prepare(
             'UPDATE academic_years SET status = ? WHERE institution_id = ? AND id = ?'
         );
         $statement->bind_param('sii', $status, $institutionId, $yearId);
         $statement->execute();
         $statement->close();
+        $selectedYearId = null;
+        if ($status === 'closed') {
+            $statement = $db->prepare(
+                'SELECT active_academic_year_id FROM institutions WHERE id = ?'
+            );
+            $statement->bind_param('i', $institutionId);
+            $statement->execute();
+            $selected = $statement->get_result()->fetch_assoc();
+            $statement->close();
+            if (is_array($selected) && (int) $selected['active_academic_year_id'] === $yearId) {
+                $statement = $db->prepare(
+                    'UPDATE institutions SET active_academic_year_id = NULL WHERE id = ?'
+                );
+                $statement->bind_param('i', $institutionId);
+                $statement->execute();
+                $statement->close();
+                $selectedYearId = $yearId;
+            }
+        }
         $actor = current_user();
         write_audit_log(
             $db,
@@ -1716,7 +2305,7 @@ function admin_panel_set_academic_year_status(
             'academic_year',
             (string) $yearId,
             $before,
-            ['status' => $status]
+            ['status' => $status, 'cleared_active_academic_year_id' => $selectedYearId]
         );
         $db->commit();
     } catch (Throwable $exception) {

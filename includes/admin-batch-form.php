@@ -12,6 +12,16 @@ require_http_methods(['GET', 'POST']);
 require_placeholder_route_access();
 $db = db_connect();
 $institutionId = admin_panel_institution_id();
+$modelStatement = $db->prepare('SELECT academic_model FROM institutions WHERE id = ?');
+$modelStatement->bind_param('i', $institutionId);
+$modelStatement->execute();
+$academicModel = $modelStatement->get_result()->fetch_column();
+$modelStatement->close();
+$academicModel = is_string($academicModel) ? $academicModel : 'legacy';
+if ($adminBatchId === null && $academicModel === 'school') {
+    http_response_code(403);
+    exit('School attendance and placement use classes and sections, not new batches.');
+}
 $user = current_user();
 $batch = $adminBatchId === null ? null : admin_panel_batch($db, $institutionId, $adminBatchId);
 if ($adminBatchId !== null && $batch === null) {
@@ -24,7 +34,7 @@ $errors = [];
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_valid_csrf_token();
     try {
-        $values = admin_panel_validate_batch($_POST);
+        $values = admin_panel_validate_batch($_POST, $academicModel);
         admin_panel_save_batch($db, $institutionId, (int) $user['id'], $values, $adminBatchId);
         set_flash('success', $adminBatchId === null ? 'Batch created.' : 'Batch updated.');
         safe_redirect('/admin/batches/index', 303);
@@ -69,7 +79,7 @@ render_app_page_start(
         <div>
             <span class="batch-form-eyebrow"><?php echo $adminBatchId === null ? 'Batch setup' : 'Batch details'; ?></span>
             <h2><?php echo $adminBatchId === null ? 'Create a new batch' : 'Edit batch details'; ?></h2>
-            <p>Organize learners into a course and class, then add the schedule and capacity.</p>
+            <p>Organize learners into a course<?php echo $academicModel === 'coaching' ? ' and optional school class' : ' and class'; ?>, then add the schedule and capacity.</p>
         </div>
     </header>
     <form method="post" action="<?php echo e(route_url($adminBatchId === null ? '/admin/batches/create' : '/admin/batches/edit') . ($adminBatchId === null ? '' : '?id=' . $adminBatchId)); ?>" class="batch-form">
@@ -78,7 +88,7 @@ render_app_page_start(
             <span aria-hidden="true"><i class="bi bi-journal-bookmark"></i></span>
             <div>
                 <h3>Batch information</h3>
-                <p>Choose a name and assign the batch to an existing course and class.</p>
+                <p>Choose a name and assign the batch to an existing course<?php echo $academicModel === 'coaching' ? '; a school class is optional' : ' and class'; ?>.</p>
             </div>
         </div>
         <label class="batch-form-field">
@@ -99,9 +109,9 @@ render_app_page_start(
             </select>
         </label>
         <label class="batch-form-field">
-            <span>Class <b aria-hidden="true">*</b></span>
-            <select class="form-select" name="class_id" required>
-                <option value="">Select a class</option>
+            <span>Class <?php echo $academicModel === 'coaching' ? '<small>Optional</small>' : '<b aria-hidden="true">*</b>'; ?></span>
+            <select class="form-select" name="class_id"<?php echo $academicModel === 'coaching' ? '' : ' required'; ?>>
+                <option value=""><?php echo $academicModel === 'coaching' ? 'No school class' : 'Select a class'; ?></option>
                 <?php foreach ($classes as $classOption): ?>
                     <option value="<?php echo e((string) $classOption['id']); ?>"<?php echo $formValues['class_id'] === (string) $classOption['id'] ? ' selected' : ''; ?>><?php echo e((string) $classOption['name']); ?></option>
                 <?php endforeach; ?>

@@ -105,8 +105,37 @@ $check(
     user_has_compatible_permission('student_fees.create', 'fees.manage'),
     'Allow the granted granular permission'
 );
+$_SESSION['user'] = [
+    'id' => 28,
+    'institution_id' => 9,
+    'user_type' => 'super_admin',
+    'status' => 'active',
+    'permissions' => [],
+];
+$_SESSION['admin_selected_institution_id'] = 14;
+$check(user_has_permission('payments.refund'), 'Give super admins full admin-module permissions');
+$check(
+    authenticated_institution_id(['super_admin', 'admin', 'staff']) === 14,
+    'Scope a super admin to the institution selected in the workspace, not their home institution'
+);
+$check(
+    user_can_access_institution(14) && !user_can_access_institution(9),
+    'Limit super-admin institution access checks to the selected institution'
+);
+unset($_SESSION['admin_selected_institution_id']);
+$check(
+    authenticated_institution_id(['super_admin']) === null,
+    'Require super admins to choose an institution instead of falling back to their home institution'
+);
+$_SESSION['user'] = [
+    'id' => 17,
+    'institution_id' => 9,
+    'user_type' => 'admin',
+    'status' => 'active',
+    'permissions' => ['dashboard.view'],
+];
 $check(user_can_access_institution(9), 'Allow the session institution');
-$check(!user_can_access_institution(10), 'Deny a different institution');
+$check(!user_can_access_institution(10), 'Deny an unselected institution');
 $check(
     authenticated_role_is_valid('staff', 'Class Coordinator', false, 9, 9, true),
     'Allow institution-scoped custom roles for staff accounts'
@@ -134,6 +163,13 @@ $routePermission = admin_route_permissions('students/store.php', 'students', 'st
 $check($routePermission === ['students.create', 'students.manage'], 'Guard student creation with a granular permission');
 $routePermission = admin_route_permissions('payments/refunds.php', 'payments', 'refunds');
 $check($routePermission === ['payments.refund', 'payments.refund'], 'Keep refund access separate from payment viewing');
+$authSource = file_get_contents(__DIR__ . '/../includes/auth.php');
+$check(
+    is_string($authSource)
+        && str_contains($authSource, '$institutionId = (int) $user[\'institution_id\'];')
+        && !str_contains($authSource, '$institutionId = authenticated_institution_id([\'super_admin\', \'admin\', \'staff\']);'),
+    'Revalidate super-admin login sessions using the account institution before workspace institution selection'
+);
 $_SERVER['REQUEST_METHOD'] = 'POST';
 $_GET = [];
 $_POST = ['action' => 'create'];

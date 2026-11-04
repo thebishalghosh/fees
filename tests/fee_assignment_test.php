@@ -28,6 +28,20 @@ $check(
         && array_unique(array_column($quarterly, 'due_amount')) === ['6000.00'],
     'Generate four equal quarterly installments from the administrator-entered date'
 );
+$monthlyComponent = fee_workflow_build_component_schedule('1200.00', 'monthly', 'quarterly', 4, '2027-01-31');
+$customComponentScheduleMissing = false;
+try {
+    fee_workflow_build_component_schedule('100.00', 'custom', 'monthly', 12, '2027-01-01');
+} catch (InvalidArgumentException) {
+    $customComponentScheduleMissing = true;
+}
+$check(
+    count($monthlyComponent) === 12
+        && $monthlyComponent[1]['due_date'] === '2027-02-28'
+        && $monthlyComponent[11]['due_amount'] === '100.00'
+        && $customComponentScheduleMissing,
+    'Build frequency-specific component schedules and require saved custom schedule rows'
+);
 $remainder = fee_workflow_build_schedule('100.00', 'monthly', 3, '2027-01-01');
 $check(
     array_column($remainder, 'due_amount') === ['33.34', '33.33', '33.33'],
@@ -103,7 +117,11 @@ if ($validSources) {
         'Scope assignment and generation lookups to the institution and lock the assignment'
     );
     $check(
-        str_contains($assignmentPage, "require_permission(\$_SERVER['REQUEST_METHOD'] === 'POST' ? 'student_fees.create' : 'student_fees.view')")
+        str_contains($assignmentPage, "require_permission(\$requiredPermission)")
+            && !str_contains($assignmentPage, 'approve_award')
+            && !str_contains($assignmentPage, 'scholarship')
+            && !str_contains($serviceSource, 'student_scholarship_awards')
+            && str_contains($assignmentPage, "user_has_compatible_permission('student_fees.create', 'fees.manage')")
             && str_contains($generationRoute, "require_permission('student_fees.create')")
             && str_contains($generationRoute, "require_http_methods(['POST'])")
             && str_contains($generationRoute, 'require_valid_csrf_token()'),

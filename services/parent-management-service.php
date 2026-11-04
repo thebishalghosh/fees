@@ -48,8 +48,9 @@ function parent_management_resolve_parent_institution_id(mysqli $db, int $parent
     if ($parentId < 1) {
         return null;
     }
+    $institutionId = parent_management_institution_id();
     if (!parent_management_is_super_admin()) {
-        return parent_management_institution_id();
+        return $institutionId;
     }
 
     $statement = $db->prepare(
@@ -57,10 +58,10 @@ function parent_management_resolve_parent_institution_id(mysqli $db, int $parent
          FROM parents p
          JOIN users u ON u.institution_id = p.institution_id AND u.id = p.user_id
          JOIN roles r ON r.id = u.role_id AND r.name = 'parent'
-         WHERE p.id = ? AND u.user_type = 'parent'
+         WHERE p.id = ? AND p.institution_id = ? AND u.user_type = 'parent'
          LIMIT 1"
     );
-    $statement->bind_param('i', $parentId);
+    $statement->bind_param('ii', $parentId, $institutionId);
     $statement->execute();
     $row = $statement->get_result()->fetch_assoc();
     $statement->close();
@@ -174,6 +175,10 @@ function parent_management_resolve_create_institution(
             throw new InvalidArgumentException('Choose an active institution for the new parent.');
         }
         $institutionId = (int) $selectedInstitutionId;
+        $contextInstitutionId = admin_selected_institution_id();
+        if ($contextInstitutionId === null || $institutionId !== $contextInstitutionId) {
+            throw new OutOfBoundsException('Choose the currently selected institution for this parent.');
+        }
     } else {
         $institutionId = $actor['institution_id'];
         if ($submittedInstitutionId !== null && $submittedInstitutionId !== '') {

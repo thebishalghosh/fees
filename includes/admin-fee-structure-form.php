@@ -22,6 +22,18 @@ $years = admin_panel_simple_list($db, $institutionId, 'academic_years');
 $courses = admin_panel_simple_list($db, $institutionId, 'courses');
 $classes = admin_panel_simple_list($db, $institutionId, 'classes');
 $categories = admin_panel_simple_list($db, $institutionId, 'fee_categories');
+$configurationStatement = $db->prepare('SELECT academic_model FROM institutions WHERE id = ?');
+$configurationStatement->bind_param('i', $institutionId);
+$configurationStatement->execute();
+$academicModel = $configurationStatement->get_result()->fetch_column();
+$configurationStatement->close();
+$configuredAcademicModel = is_string($academicModel)
+    && in_array($academicModel, ['school', 'college', 'university', 'coaching'], true);
+$scopeOptions = admin_panel_fee_scope_options(
+    $db,
+    $institutionId,
+    is_string($academicModel) ? $academicModel : null
+);
 $errors = [];
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_valid_csrf_token();
@@ -41,18 +53,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 $formValues = [];
-foreach (['name', 'description', 'academic_year_id', 'course_id', 'class_id', 'status'] as $field) {
+foreach (['name', 'description', 'academic_year_id', 'course_id', 'class_id', 'status', 'fee_group_code', 'effective_from', 'effective_until'] as $field) {
     $formValues[$field] = is_string($_POST[$field] ?? null)
         ? $_POST[$field]
         : (string) ($structure[$field] ?? ($field === 'status' ? 'draft' : ''));
+}
+$scopeValue = is_string($_POST['target_scope'] ?? null) ? $_POST['target_scope'] : '';
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' && $structure !== null
+    && is_string($structure['target_model'] ?? null)
+    && $structure['target_model'] !== 'legacy') {
+    $ownerId = $structure['target_model'] === 'class'
+        ? $structure['class_id']
+        : $structure['course_id'];
+    $targetId = match ($structure['target_model']) {
+        'class' => $structure['section_id'] ?? 0,
+        'term' => $structure['academic_term_id'] ?? 0,
+        'batch' => $structure['batch_id'] ?? 0,
+        default => 0,
+    };
+    $scopeValue = $structure['target_model'] . ':' . $structure['academic_year_id'] . ':' . $ownerId . ':' . $targetId;
 }
 $selectedCategoryValues = is_array($_POST['category_ids'] ?? null)
     ? array_values(array_filter($_POST['category_ids'], 'is_string'))
     : array_map(static fn(array $item): string => (string) $item['category_id'], $structure['items'] ?? []);
 $amountValues = is_array($_POST['items'] ?? null) ? $_POST['items'] : [];
+$frequencyValues = is_array($_POST['frequencies'] ?? null) ? $_POST['frequencies'] : [];
+$scheduleValues = is_array($_POST['component_schedules'] ?? null) ? $_POST['component_schedules'] : [];
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' && $structure !== null) {
     foreach ($structure['items'] as $item) {
         $amountValues[(string) $item['category_id']] = (string) $item['amount'];
+        $frequencyValues[(string) $item['category_id']] = (string) ($item['frequency'] ?? 'one_time');
+        $scheduleValues[(string) $item['category_id']] = implode("\n", array_map(
+            static fn(array $schedule): string => $schedule['due_date'] . ', ' . $schedule['amount'],
+            $item['schedule'] ?? []
+        ));
     }
 }
 $title = $adminFeeStructureId === null ? 'Create Fee Structure' : 'Edit Fee Structure';
@@ -86,6 +120,30 @@ render_app_page_start($title, 'Fee totals are calculated from the selected categ
             <span>01</span>
             <div><h3>Structure details</h3><p>Choose when and where this fee structure applies.</p></div>
         </div>
+        <?php if ($configuredAcademicModel): ?>
+        <label class="fee-structure-field fee-structure-field-wide">
+            <span>Academic fee scope <b aria-hidden="true">*</b></span>
+            <select class="form-select" name="target_scope" required>
+                <option value="">Select a class, programme, term, or batch</option>
+                <?php foreach ($scopeOptions as $scopeOption): ?>
+                    <option value="<?php echo e($scopeOption['scope_value']); ?>"<?php echo $scopeValue === $scopeOption['scope_value'] ? ' selected' : ''; ?>><?php echo e($scopeOption['label']); ?></option>
+                <?php endforeach; ?>
+            </select>
+            <?php if ($scopeOptions === []): ?><small>Offer a class, programme, term, or batch in a non-closed academic year before creating a scoped fee structure.</small><?php endif; ?>
+        </label>
+        <label class="fee-structure-field">
+            <span>Fee group <b aria-hidden="true">*</b></span>
+            <input class="form-control" name="fee_group_code" maxlength="40" pattern="[A-Za-z0-9][A-Za-z0-9_-]*" required value="<?php echo e($formValues['fee_group_code'] !== '' ? $formValues['fee_group_code'] : 'STANDARD'); ?>">
+        </label>
+        <label class="fee-structure-field">
+            <span>Effective from <b aria-hidden="true">*</b></span>
+            <input class="form-control" type="date" name="effective_from" required value="<?php echo e($formValues['effective_from']); ?>">
+        </label>
+        <label class="fee-structure-field">
+            <span>Effective until <small>Optional</small></span>
+            <input class="form-control" type="date" name="effective_until" value="<?php echo e($formValues['effective_until']); ?>">
+        </label>
+        <?php else: ?>
         <label class="fee-structure-field">
             <span>Structure name <b aria-hidden="true">*</b></span>
             <input class="form-control" name="name" maxlength="150" required placeholder="e.g. Annual tuition fees" value="<?php echo e($formValues['name']); ?>">
@@ -99,6 +157,7 @@ render_app_page_start($title, 'Fee totals are calculated from the selected categ
                 <?php endforeach; ?>
             </select>
         </label>
+        <?php endif; ?>
         <label class="fee-structure-field">
             <span>Course <small>Optional</small></span>
             <select class="form-select" name="course_id">
@@ -142,7 +201,7 @@ render_app_page_start($title, 'Fee totals are calculated from the selected categ
             <?php else: ?>
                 <div class="table-responsive fee-structure-table-wrap">
                     <table class="table fee-structure-table">
-                        <thead><tr><th scope="col">Include</th><th scope="col">Category</th><th scope="col">Amount</th></tr></thead>
+                        <thead><tr><th scope="col">Include</th><th scope="col">Category</th><th scope="col">Amount</th><th scope="col">Frequency</th><th scope="col">Custom schedule</th></tr></thead>
                         <tbody>
                             <?php foreach ($categories as $category): ?>
                                 <?php $categoryId = (string) $category['id']; $checked = in_array($categoryId, $selectedCategoryValues, true); $disabled = $category['status'] !== 'active' && !$checked; ?>
@@ -159,6 +218,17 @@ render_app_page_start($title, 'Fee totals are calculated from the selected categ
                                             <span aria-hidden="true">₹</span>
                                             <input class="form-control" type="number" name="items[<?php echo e($categoryId); ?>]" min="0.01" max="9999999999.99" step="0.01" value="<?php echo e(is_string($amountValues[$categoryId] ?? null) ? $amountValues[$categoryId] : ''); ?>" aria-label="<?php echo e($category['name'] . ' amount'); ?>">
                                         </div>
+                                    </td>
+                                    <td>
+                                        <select class="form-select" name="frequencies[<?php echo e($categoryId); ?>]" aria-label="<?php echo e($category['name'] . ' frequency'); ?>">
+                                            <?php foreach (['one_time' => 'One time', 'monthly' => 'Monthly', 'quarterly' => 'Quarterly', 'half_yearly' => 'Half-yearly', 'yearly' => 'Yearly', 'custom' => 'Custom schedule'] as $frequency => $frequencyLabel): ?>
+                                                <option value="<?php echo e($frequency); ?>"<?php echo ($frequencyValues[$categoryId] ?? 'one_time') === $frequency ? ' selected' : ''; ?>><?php echo e($frequencyLabel); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <textarea class="form-control" name="component_schedules[<?php echo e($categoryId); ?>]" rows="2" placeholder="YYYY-MM-DD, amount" aria-label="<?php echo e($category['name'] . ' custom schedule'); ?>"><?php echo e(is_string($scheduleValues[$categoryId] ?? null) ? $scheduleValues[$categoryId] : ''); ?></textarea>
+                                        <small>Required only for a custom schedule; amounts must total the component.</small>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>

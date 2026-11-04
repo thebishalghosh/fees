@@ -21,7 +21,9 @@ $isSuperAdmin = parent_management_is_super_admin();
 $institutions = $isSuperAdmin ? parent_management_get_active_institutions($db) : [];
 $institutionId = null;
 if ($isSuperAdmin) {
-    $requestedInstitutionId = $_GET['institution_id'] ?? $old['institution_id'] ?? null;
+    $requestedInstitutionId = $_GET['institution_id']
+        ?? $old['institution_id']
+        ?? admin_selected_institution_id();
     if ($requestedInstitutionId !== null && $requestedInstitutionId !== '') {
         try {
             $institutionId = parent_management_resolve_create_institution(

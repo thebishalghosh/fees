@@ -6,10 +6,26 @@ require_once __DIR__ . '/../services/admin-panel-service.php';
 
 require_http_methods(['GET', 'HEAD']);
 require_placeholder_route_access();
+$user = current_user();
+if ($user['user_type'] === 'super_admin' && admin_selected_institution_id() === null) {
+    render_app_page_start(
+        'Dashboard',
+        'Choose an institution to view and manage its data.',
+        'admin',
+        ['admin-dashboard.css']
+    );
+    ?>
+    <section class="dashboard-panel" aria-labelledby="institution-required-title">
+        <h2 id="institution-required-title">Select an institution to continue</h2>
+        <p class="mb-0">Use the institution filter above. Dashboard totals and admin pages are scoped to the institution you select.</p>
+    </section>
+    <?php
+    render_app_page_end('admin');
+    exit;
+}
 $institutionId = admin_panel_institution_id();
 $data = admin_panel_dashboard_data(db_connect(), $institutionId, user_has_permission('payments.view'));
 $counts = $data['counts'];
-$user = current_user();
 $staffName = is_string($user['full_name'] ?? null) ? trim($user['full_name']) : '';
 $canViewFinancialSummary = user_has_compatible_permission('financial_reports.view', 'reports.view');
 

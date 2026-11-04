@@ -6,6 +6,7 @@ require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../services/fee-assignment-service.php';
 
 require_http_methods(['POST']);
+require_placeholder_route_access();
 require_permission('student_fees.create');
 require_valid_csrf_token();
 $user = current_user();
