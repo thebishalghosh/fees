@@ -25,10 +25,6 @@ $invalidValues = [
     ['brand_primary_color' => 'red'],
     ['brand_sidebar_background' => '#12345'],
     ['brand_header_background' => 'url(https://example.test)'],
-    ['brand_sidebar_background' => '#FFFFFF', 'brand_sidebar_text' => '#FFFFFF'],
-    ['brand_button_background' => '#FFFFFF', 'brand_button_text' => '#FFFFFF'],
-    ['login_primary_color' => '#FFFFFF'],
-    ['brand_page_background' => '#000000'],
     ['login_welcome_text' => str_repeat('x', 121)],
     ['login_welcome_text' => "Hello\nWelcome"],
 ];
@@ -39,8 +35,35 @@ foreach ($invalidValues as $override) {
     } catch (InvalidArgumentException) {
         $rejected = true;
     }
-    $check($rejected, 'Reject invalid colors, unreadable combinations, and unsafe welcome text');
+    $check($rejected, 'Reject malformed colors and unsafe welcome text');
 }
+
+$lowContrastColors = array_replace($defaults, [
+    'brand_sidebar_background' => '#FFFFFF',
+    'brand_sidebar_text' => '#FFFFFF',
+    'brand_header_background' => '#FFFFFF',
+    'brand_header_text' => '#FFFFFF',
+    'brand_page_background' => '#000000',
+    'brand_button_background' => '#FFFFFF',
+    'brand_button_text' => '#FFFFFF',
+    'login_primary_color' => '#FFFFFF',
+]);
+$check(
+    institution_branding_validate_settings($lowContrastColors) === array_replace(
+        $lowContrastColors,
+        [
+            'brand_sidebar_background' => '#FFFFFF',
+            'brand_sidebar_text' => '#FFFFFF',
+            'brand_header_background' => '#FFFFFF',
+            'brand_header_text' => '#FFFFFF',
+            'brand_page_background' => '#000000',
+            'brand_button_background' => '#FFFFFF',
+            'brand_button_text' => '#FFFFFF',
+            'login_primary_color' => '#FFFFFF',
+        ]
+    ),
+    'Accept manually selected colors regardless of text contrast'
+);
 
 $validCustomColors = array_replace($defaults, [
     'brand_primary_color' => '#114477',

@@ -23,8 +23,10 @@ if (!in_array($link, ['', 'linked', 'unlinked'], true)) {
 }
 $requestedPage = filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT);
 $page = $requestedPage === false || $requestedPage < 1 ? 1 : $requestedPage;
+$isSuperAdmin = parent_management_is_super_admin();
+$listInstitutionId = $isSuperAdmin ? null : $institutionId;
 $summary = parent_management_get_summary($db, $institutionId);
-$result = parent_management_list($db, $institutionId, $search, $status, $link, $page);
+$result = parent_management_list($db, $listInstitutionId, $search, $status, $link, $page);
 $canCreate = user_has_compatible_permission('parents.create', 'parents.manage');
 $canManage = user_has_permission('parents.edit') || user_has_permission('parents.delete')
     || (($user = current_user()) !== null && ($user['role_is_system'] ?? true) && user_has_permission('parents.manage'));
@@ -75,9 +77,9 @@ render_app_page_start(
         <div>
             <div class="parents-title-row">
                 <h2 id="parents-list-title">Parent Directory</h2>
-                <span class="parents-live-banner"><i class="bi bi-database-check" aria-hidden="true"></i> Live institution data</span>
+                <span class="parents-live-banner"><i class="bi bi-database-check" aria-hidden="true"></i><?php echo $isSuperAdmin ? ' All institutions' : ' Live institution data'; ?></span>
             </div>
-            <p>Parent accounts and active student links for your institution.</p>
+            <p><?php echo $isSuperAdmin ? 'Parent accounts and active student links across all institutions.' : 'Parent accounts and active student links for your institution.'; ?></p>
         </div>
         <span class="parents-result-count" aria-live="polite"><strong><?php echo e(number_format($result['total'])); ?></strong> records</span>
     </div>
@@ -119,6 +121,7 @@ render_app_page_start(
             <thead>
                 <tr>
                     <th scope="col">Parent</th>
+                    <?php if ($isSuperAdmin): ?><th scope="col">Institution</th><?php endif; ?>
                     <th scope="col">Contact Information</th>
                     <th scope="col">Linked Students</th>
                     <th scope="col">Relationship</th>
@@ -130,7 +133,7 @@ render_app_page_start(
             <tbody>
                 <?php if ($result['parents'] === []): ?>
                     <tr>
-                        <td colspan="7">
+                        <td colspan="<?php echo $isSuperAdmin ? '8' : '7'; ?>">
                             <div class="parents-empty-state">
                                 <span aria-hidden="true"><i class="bi bi-search"></i></span>
                                 <strong>No parents match these filters</strong>
@@ -159,6 +162,9 @@ render_app_page_start(
                                     <span class="parent-name"><?php echo e($parent['full_name']); ?></span>
                                 </div>
                             </td>
+                            <?php if ($isSuperAdmin): ?>
+                                <td><span class="parent-institution-name"><?php echo e($parent['institution_name']); ?></span></td>
+                            <?php endif; ?>
                             <td>
                                 <div class="parent-contact">
                                     <span><i class="bi bi-envelope" aria-hidden="true"></i><?php echo e($parent['email'] ?? 'Not provided'); ?></span>

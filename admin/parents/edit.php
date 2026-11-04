@@ -7,19 +7,35 @@ require_once __DIR__ . '/../../services/parent-management-service.php';
 
 require_http_methods(['GET', 'HEAD']);
 require_placeholder_route_access();
-$institutionId = parent_management_institution_id();
 $parentId = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT);
 if (!is_int($parentId) || $parentId < 1) {
     http_response_code(404);
     exit('Parent not found.');
 }
 $db = db_connect();
+$institutionId = parent_management_resolve_parent_institution_id($db, $parentId);
+if ($institutionId === null) {
+    http_response_code(404);
+    exit('Parent not found.');
+}
 $parent = parent_management_get_parent($db, $institutionId, $parentId);
 if ($parent === null) {
     http_response_code(404);
     exit('Parent not found.');
 }
 $students = parent_management_get_student_options($db, $institutionId, $parent['linked_student_ids']);
+$affiliation = null;
+if (parent_management_is_super_admin()) {
+    $context = parent_management_get_affiliation_context($db, $institutionId, $parentId);
+    if ($context === null) {
+        http_response_code(404);
+        exit('Parent affiliation details were not found.');
+    }
+    $affiliation = [
+        ...$context,
+        'institutions' => parent_management_get_active_institutions($db),
+    ];
+}
 $old = $_SESSION['parent_management_old'] ?? [];
 if (!is_array($old) || ($old['form'] ?? null) !== 'edit' || (int) ($old['parent_id'] ?? 0) !== $parentId) {
     $old = [];
@@ -48,9 +64,13 @@ render_app_page_start(
         <div>
             <span class="parents-record-reference">Parent #<?php echo e((string) $parent['id']); ?></span>
             <h2 id="parent-form-title">Parent details</h2>
-            <p>Changes are limited to this parent account and students in your institution.</p>
+            <p>
+                <?php echo $affiliation === null
+                    ? 'Changes are limited to this parent account and students in your institution.'
+                    : 'Update this parent profile or use the confirmed Super Admin-only institution affiliation correction.'; ?>
+            </p>
         </div>
     </div>
-    <?php render_parent_profile_form('/admin/parents/update?id=' . $parentId, $parent, $students, $old, true); ?>
+    <?php render_parent_profile_form('/admin/parents/update?id=' . $parentId, $parent, $students, $old, true, $affiliation); ?>
 </section>
 <?php render_app_page_end('admin'); ?>

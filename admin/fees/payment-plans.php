@@ -56,7 +56,7 @@ render_app_page_start(
 <?php echo render_flash_messages(); ?>
 <nav aria-label="Breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="<?php echo e(route_url('/admin/dashboard')); ?>">Dashboard</a></li><li class="breadcrumb-item active" aria-current="page">Payment plans</li></ol></nav>
 <?php foreach ($errors as $error): ?><div class="alert alert-danger" role="alert"><?php echo e($error); ?></div><?php endforeach; ?>
-<?php if (user_has_permission_compatible('student_fees.create', 'fees.manage')): ?>
+<?php if (user_has_compatible_permission('student_fees.create', 'fees.manage')): ?>
 <section class="dashboard-panel admin-form-panel mb-4">
     <h2 class="h5">Create a payment plan</h2>
     <p class="text-muted">Installment amounts are derived equally from the assigned fee total; remainder cents are added to the earliest installments.</p>

@@ -356,6 +356,15 @@
     white-space: nowrap;
 }
 
+.parent-institution-name {
+    display: inline-block;
+    max-width: 190px;
+    color: #40536e;
+    font-size: .74rem;
+    font-weight: 600;
+    line-height: 1.4;
+}
+
 .parent-contact {
     display: grid;
     gap: .3rem;

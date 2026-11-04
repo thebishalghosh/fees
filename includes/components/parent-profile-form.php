@@ -6,7 +6,9 @@ function render_parent_profile_form(
     array $parent,
     array $students,
     array $old,
-    bool $isEdit
+    bool $isEdit,
+    ?array $affiliation = null,
+    ?int $createInstitutionId = null
 ): void {
     $values = [
         'full_name' => $old['full_name'] ?? $parent['full_name'] ?? '',
@@ -32,6 +34,8 @@ function render_parent_profile_form(
         <?php echo csrf_field(); ?>
         <?php if ($isEdit): ?>
             <input type="hidden" name="manage_links" value="1">
+        <?php elseif ($createInstitutionId !== null): ?>
+            <input type="hidden" name="institution_id" value="<?php echo e((string) $createInstitutionId); ?>">
         <?php endif; ?>
         <div class="parents-form-grid">
             <div>
@@ -113,6 +117,80 @@ function render_parent_profile_form(
                 </select>
                 <small class="parents-field-help">Only admitted or active students can be newly linked. Existing links to other student statuses can be retained or revoked. Use Ctrl/Command to select multiple students.</small>
             </div>
+            <?php if ($isEdit && $affiliation !== null): ?>
+                <?php
+                $currentInstitution = $affiliation['current_institution'];
+                $affiliationInstitutions = $affiliation['institutions'];
+                $affiliationStudents = $affiliation['students'];
+                $oldAffiliationIds = is_array($old['affiliation_student_ids'] ?? null)
+                    ? array_map('intval', $old['affiliation_student_ids'])
+                    : [];
+                $selectedTargetInstitution = isset($old['affiliation_target_institution_id'])
+                    ? (int) $old['affiliation_target_institution_id']
+                    : 0;
+                ?>
+                <section class="parents-form-wide" aria-labelledby="institution-affiliation-title">
+                    <h3 id="institution-affiliation-title">Institution Affiliation</h3>
+                    <p>
+                        Current parent institution:
+                        <strong><?php echo e($currentInstitution['name']); ?></strong>
+                        (<?php echo e((string) $currentInstitution['id']); ?>)
+                    </p>
+                    <label class="form-label" for="parent-affiliation-institution">New institution</label>
+                    <select class="form-select" id="parent-affiliation-institution" name="affiliation_target_institution_id">
+                        <option value="">Choose an active institution</option>
+                        <?php foreach ($affiliationInstitutions as $institution): ?>
+                            <option value="<?php echo e((string) $institution['id']); ?>"<?php echo $selectedTargetInstitution === $institution['id'] ? ' selected' : ''; ?>>
+                                <?php echo e($institution['name']); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <small class="parents-field-help">
+                        Only active institutions are selectable. The server verifies the selected institution again when saving.
+                    </small>
+
+                    <fieldset>
+                        <legend>Linked students to reassign</legend>
+                        <?php if ($affiliationStudents === []): ?>
+                            <p>This parent has no linked students.</p>
+                        <?php else: ?>
+                            <p class="parents-field-help">
+                                Select every linked student. This tenant model cannot leave a parent-student link in a different institution.
+                                A student with fee, payment, receipt, attendance, academic, or other institution-bound history cannot be moved.
+                            </p>
+                            <?php foreach ($affiliationStudents as $student): ?>
+                                <?php $studentId = (int) $student['student_id']; ?>
+                                <label class="form-check">
+                                    <input
+                                        class="form-check-input"
+                                        type="checkbox"
+                                        name="affiliation_student_ids[]"
+                                        value="<?php echo e((string) $studentId); ?>"
+                                        <?php echo in_array($studentId, $oldAffiliationIds, true) ? ' checked' : ''; ?>
+                                    >
+                                    <span class="form-check-label">
+                                        <?php echo e($student['full_name'] . ' · ' . $student['student_code']); ?>
+                                        — current institution: <?php echo e($student['student_institution_name']); ?>
+                                        (<?php echo e((string) $student['student_institution_id']); ?>),
+                                        relationship: <?php echo e($student['relationship_status']); ?>
+                                    </span>
+                                </label>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </fieldset>
+
+                    <label class="form-check">
+                        <input class="form-check-input" type="checkbox" name="confirm_affiliation" value="1">
+                        <span class="form-check-label">
+                            I confirm this institution correction. The parent and selected linked students will be reassigned together;
+                            historical or institution-bound records will not be moved or deleted.
+                        </span>
+                    </label>
+                    <button class="parents-submit-button" type="submit" name="parent_action" value="update_affiliation" formnovalidate>
+                        Transfer institution affiliation
+                    </button>
+                </section>
+            <?php endif; ?>
         </div>
         <?php if ($isEdit): ?>
             <div class="parents-form-note" role="note">
@@ -125,7 +203,12 @@ function render_parent_profile_form(
         <?php else: ?>
             <div class="parents-form-note" role="note">
                 <i class="bi bi-shield-lock" aria-hidden="true"></i>
-                <span>The institution is taken from your authenticated session. The new user account has no password and starts pending; email verification is never assumed.</span>
+                <span>
+                    <?php echo $createInstitutionId === null
+                        ? 'The institution is resolved from your authenticated account; submitted institution IDs cannot override it.'
+                        : 'The selected active institution is checked again by the server when this form is submitted.'; ?>
+                    The new user account has no password and starts pending; email verification is never assumed.
+                </span>
             </div>
         <?php endif; ?>
         <div class="parents-form-actions">

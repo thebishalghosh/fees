@@ -9,7 +9,6 @@ require_placeholder_route_access();
 require_valid_csrf_token();
 
 $user = current_user();
-$institutionId = parent_management_institution_id();
 $parentId = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT);
 if (!is_int($parentId) || $parentId < 1) {
     set_flash('danger', 'The parent record was not found.');
@@ -17,10 +16,55 @@ if (!is_int($parentId) || $parentId < 1) {
 }
 
 $db = db_connect();
+$institutionId = parent_management_resolve_parent_institution_id($db, $parentId);
+if ($institutionId === null) {
+    set_flash('danger', 'The parent record was not found.');
+    safe_redirect(route_url('/admin/parents/index'));
+}
 $existingParent = parent_management_get_parent($db, $institutionId, $parentId);
 if ($existingParent === null) {
     set_flash('danger', 'The parent record was not found in your institution.');
     safe_redirect(route_url('/admin/parents/index'));
+}
+
+if (($_POST['parent_action'] ?? null) === 'update_affiliation') {
+    if (!parent_management_is_super_admin()) {
+        http_response_code(403);
+        exit('Only an authorized Super Admin can correct institution affiliations.');
+    }
+
+    try {
+        if (($_POST['confirm_affiliation'] ?? null) !== '1') {
+            throw new InvalidArgumentException('Confirm the institution correction before saving it.');
+        }
+        $rawTargetInstitutionId = $_POST['affiliation_target_institution_id'] ?? null;
+        if (!is_string($rawTargetInstitutionId) && !is_int($rawTargetInstitutionId)) {
+            throw new InvalidArgumentException('Choose an active destination institution.');
+        }
+        $targetInstitutionId = filter_var((string) $rawTargetInstitutionId, FILTER_VALIDATE_INT);
+        if (!is_int($targetInstitutionId) || $targetInstitutionId < 1) {
+            throw new InvalidArgumentException('Choose an active destination institution.');
+        }
+        $selectedStudentIds = parent_management_student_ids($_POST['affiliation_student_ids'] ?? []);
+        $result = parent_management_transfer_affiliation(
+            $db,
+            (int) $existingParent['institution_id'],
+            $parentId,
+            $targetInstitutionId,
+            $selectedStudentIds,
+            (int) $user['id']
+        );
+        set_flash(
+            'success',
+            'Institution affiliation corrected. ' . count($result['student_ids'])
+            . ' linked student(s) were reassigned. The parent must sign in again.'
+        );
+        safe_redirect(route_url('/admin/parents/index'));
+    } catch (Throwable $exception) {
+        $_SESSION['parent_management_old'] = parent_management_old_form_values($_POST, 'edit', $parentId);
+        parent_management_handle_failure($exception, 'affiliation_transfer');
+        safe_redirect(route_url('/admin/parents/edit') . '?id=' . $parentId);
+    }
 }
 
 $profileResult = parent_management_validate_profile($_POST);

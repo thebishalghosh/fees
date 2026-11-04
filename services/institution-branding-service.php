@@ -47,56 +47,7 @@ function institution_branding_validate_settings(array $input): array
         $values[$key] = strtoupper($value);
     }
 
-    $contrastPairs = [
-        ['brand_sidebar_background', 'brand_sidebar_text'],
-        ['brand_header_background', 'brand_header_text'],
-        ['brand_button_background', 'brand_button_text'],
-        ['brand_surface_background', null],
-        ['brand_page_background', null],
-        ['brand_primary_color', 'brand_surface_background'],
-        ['brand_primary_color', 'brand_sidebar_background'],
-        ['brand_primary_color', 'brand_button_text'],
-        ['brand_secondary_color', 'brand_surface_background'],
-        ['brand_secondary_color', 'brand_button_text'],
-        ['login_background_color', null],
-        ['login_primary_color', 'brand_button_text'],
-    ];
-    foreach ($contrastPairs as [$backgroundKey, $textKey]) {
-        $background = $values[$backgroundKey];
-        $foreground = $textKey === null ? '#0E1A33' : $values[$textKey];
-        if (institution_branding_contrast_ratio($foreground, $background) < 4.5) {
-            throw new InvalidArgumentException('Some color combinations do not provide readable text contrast.');
-        }
-    }
-    if (institution_branding_contrast_ratio('#FFFFFF', $values['brand_primary_color']) < 4.5) {
-        throw new InvalidArgumentException('The primary color must remain readable on white document backgrounds.');
-    }
-
     return $values;
-}
-
-function institution_branding_contrast_ratio(string $foreground, string $background): float
-{
-    $luminance = static function (string $color): float {
-        $channels = [
-            hexdec(substr($color, 1, 2)) / 255,
-            hexdec(substr($color, 3, 2)) / 255,
-            hexdec(substr($color, 5, 2)) / 255,
-        ];
-        $linear = array_map(
-            static fn(float $channel): float => $channel <= 0.04045
-                ? $channel / 12.92
-                : (($channel + 0.055) / 1.055) ** 2.4,
-            $channels
-        );
-
-        return 0.2126 * $linear[0] + 0.7152 * $linear[1] + 0.0722 * $linear[2];
-    };
-    $foregroundLuminance = $luminance($foreground);
-    $backgroundLuminance = $luminance($background);
-
-    return (max($foregroundLuminance, $backgroundLuminance) + 0.05)
-        / (min($foregroundLuminance, $backgroundLuminance) + 0.05);
 }
 
 function institution_branding_settings(mysqli $db, int $institutionId): array
@@ -363,9 +314,15 @@ function institution_branding_save(mysqli $db, int $institutionId, array $input)
 {
     require_login();
     $actor = current_user();
-    if ($actor === null
-        || ($actor['user_type'] ?? null) !== 'super_admin'
-        || ($actor['role_is_system'] ?? false) !== true) {
+    $actorType = is_array($actor) && is_string($actor['user_type'] ?? null)
+        ? $actor['user_type']
+        : '';
+    $isSystemSuperAdmin = $actorType === 'super_admin'
+        && ($actor['role_is_system'] ?? false) === true;
+    $isOwningInstitutionAdmin = $actorType === 'admin'
+        && ($actor['role_is_system'] ?? false) === true
+        && (int) ($actor['institution_id'] ?? 0) === $institutionId;
+    if (!$isSystemSuperAdmin && !$isOwningInstitutionAdmin) {
         http_response_code(403);
         exit('Forbidden.');
     }
@@ -399,7 +356,7 @@ function institution_branding_save(mysqli $db, int $institutionId, array $input)
             $db,
             $institutionId,
             (int) $actor['id'],
-            'super_admin',
+            $actorType,
             'institution.branding_updated',
             'institution',
             (string) $institutionId,

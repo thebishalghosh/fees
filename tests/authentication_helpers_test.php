@@ -85,6 +85,26 @@ $check(is_authenticated(), 'Recognize a well-formed server-side auth session');
 $check(authenticated_dashboard_route() === '/admin/dashboard', 'Route institution administrators to the admin dashboard');
 $check(user_has_permission('dashboard.view'), 'Allow a granted permission');
 $check(!user_has_permission('payments.refund'), 'Deny an ungranted permission');
+$check(
+    user_has_compatible_permission('student_fees.create', 'fees.manage') === false,
+    'Deny an ungranted permission when its legacy system permission is absent'
+);
+$_SESSION['user']['permissions'][] = 'fees.manage';
+$check(
+    user_has_compatible_permission('student_fees.create', 'fees.manage'),
+    'Allow a system-role legacy permission fallback'
+);
+$_SESSION['user']['role_is_system'] = false;
+$check(
+    !user_has_compatible_permission('student_fees.create', 'fees.manage'),
+    'Do not apply a legacy permission fallback to custom roles'
+);
+$_SESSION['user']['role_is_system'] = true;
+$_SESSION['user']['permissions'][] = 'student_fees.create';
+$check(
+    user_has_compatible_permission('student_fees.create', 'fees.manage'),
+    'Allow the granted granular permission'
+);
 $check(user_can_access_institution(9), 'Allow the session institution');
 $check(!user_can_access_institution(10), 'Deny a different institution');
 $check(

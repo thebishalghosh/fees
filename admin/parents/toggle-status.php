@@ -18,9 +18,14 @@ if ($parentId === false || $parentId < 1) {
 
 $user = current_user();
 try {
+    $db = db_connect();
+    $institutionId = parent_management_resolve_parent_institution_id($db, $parentId);
+    if ($institutionId === null) {
+        throw new OutOfBoundsException('The parent record was not found.');
+    }
     $newStatus = parent_management_toggle_status(
-        db_connect(),
-        parent_management_institution_id(),
+        $db,
+        $institutionId,
         $parentId,
         (int) $user['id'],
         (string) $user['user_type']

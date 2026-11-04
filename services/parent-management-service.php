@@ -35,15 +35,217 @@ function parent_management_institution_id(): int
     return $institutionId;
 }
 
-function parent_management_prepare_list_filters(
+function parent_management_is_super_admin(): bool
+{
+    $user = current_user();
+    return $user !== null
+        && $user['user_type'] === 'super_admin'
+        && ($user['role_is_system'] ?? false) === true;
+}
+
+function parent_management_resolve_parent_institution_id(mysqli $db, int $parentId): ?int
+{
+    if ($parentId < 1) {
+        return null;
+    }
+    if (!parent_management_is_super_admin()) {
+        return parent_management_institution_id();
+    }
+
+    $statement = $db->prepare(
+        "SELECT p.institution_id
+         FROM parents p
+         JOIN users u ON u.institution_id = p.institution_id AND u.id = p.user_id
+         JOIN roles r ON r.id = u.role_id AND r.name = 'parent'
+         WHERE p.id = ? AND u.user_type = 'parent'
+         LIMIT 1"
+    );
+    $statement->bind_param('i', $parentId);
+    $statement->execute();
+    $row = $statement->get_result()->fetch_assoc();
+    $statement->close();
+
+    return is_array($row) ? (int) $row['institution_id'] : null;
+}
+
+function parent_management_get_active_institutions(mysqli $db): array
+{
+    $result = $db->query(
+        "SELECT id, name FROM institutions WHERE status = 'active' ORDER BY name, id"
+    );
+    $institutions = [];
+    while ($institution = $result->fetch_assoc()) {
+        $institution['id'] = (int) $institution['id'];
+        $institutions[] = $institution;
+    }
+
+    return $institutions;
+}
+
+function parent_management_create_actor_record(mysqli $db, int $actorUserId, string $actorType): array
+{
+    if ($actorUserId < 1 || !in_array($actorType, ['super_admin', 'admin', 'staff'], true)) {
+        throw new OutOfBoundsException('This account is not authorized to create parent profiles.');
+    }
+
+    $statement = $db->prepare(
+        'SELECT u.id, u.institution_id, u.user_type, u.status, u.role_id,
+                r.name AS role_name, r.is_system AS role_is_system,
+                r.institution_id AS role_institution_id, r.is_active AS role_is_active,
+                i.status AS institution_status
+         FROM users u
+         JOIN roles r ON r.id = u.role_id
+         JOIN institutions i ON i.id = u.institution_id
+         WHERE u.id = ?
+         LIMIT 1'
+    );
+    $statement->bind_param('i', $actorUserId);
+    $statement->execute();
+    $actor = $statement->get_result()->fetch_assoc();
+    $statement->close();
+
+    if (!is_array($actor)
+        || $actor['user_type'] !== $actorType
+        || $actor['status'] !== 'active'
+        || $actor['institution_status'] !== 'active'
+        || !authenticated_role_is_valid(
+            (string) $actor['user_type'],
+            (string) $actor['role_name'],
+            (int) $actor['role_is_system'] === 1,
+            $actor['role_institution_id'] === null ? null : (int) $actor['role_institution_id'],
+            (int) $actor['institution_id'],
+            (int) $actor['role_is_active'] === 1
+        )) {
+        throw new OutOfBoundsException('This account is not authorized to create parent profiles.');
+    }
+
+    $roleId = (int) $actor['role_id'];
+    $permissionStatement = $db->prepare(
+        'SELECT p.permission_key
+         FROM role_permissions rp
+         JOIN permissions p ON p.id = rp.permission_id
+         WHERE rp.role_id = ?
+           AND p.permission_key IN (\'parents.create\', \'parents.manage\')'
+    );
+    $permissionStatement->bind_param('i', $roleId);
+    $permissionStatement->execute();
+    $permissions = [];
+    $permissionResult = $permissionStatement->get_result();
+    while ($permission = $permissionResult->fetch_assoc()) {
+        $permissions[] = (string) $permission['permission_key'];
+    }
+    $permissionStatement->close();
+
+    $isSystemRole = (int) $actor['role_is_system'] === 1;
+    if (!in_array('parents.create', $permissions, true)
+        && !($isSystemRole && in_array('parents.manage', $permissions, true))) {
+        throw new OutOfBoundsException('Your role does not have permission to create parent profiles.');
+    }
+
+    $actor['institution_id'] = (int) $actor['institution_id'];
+    return $actor;
+}
+
+function parent_management_resolve_create_institution(
+    mysqli $db,
+    array $authenticatedUser,
+    mixed $submittedInstitutionId
+): int {
+    $actorId = filter_var($authenticatedUser['id'] ?? null, FILTER_VALIDATE_INT);
+    $actorType = $authenticatedUser['user_type'] ?? null;
+    $actorInstitutionId = filter_var($authenticatedUser['institution_id'] ?? null, FILTER_VALIDATE_INT);
+    if ($actorId === false || $actorInstitutionId === false || !is_string($actorType)) {
+        throw new OutOfBoundsException('This account is not authorized to create parent profiles.');
+    }
+
+    $actor = parent_management_create_actor_record($db, (int) $actorId, $actorType);
+    if ((int) $actorInstitutionId !== $actor['institution_id']
+        || (isset($authenticatedUser['role_is_system'])
+            && $authenticatedUser['role_is_system'] !== ((int) $actor['role_is_system'] === 1))) {
+        throw new OutOfBoundsException('The authenticated account no longer matches its institution or role.');
+    }
+
+    if ($actorType === 'super_admin') {
+        if (!parent_management_is_super_admin()) {
+            throw new OutOfBoundsException('Only a system Super Admin can choose a parent institution.');
+        }
+        $selectedInstitutionId = filter_var($submittedInstitutionId, FILTER_VALIDATE_INT);
+        if ($selectedInstitutionId === false || $selectedInstitutionId < 1) {
+            throw new InvalidArgumentException('Choose an active institution for the new parent.');
+        }
+        $institutionId = (int) $selectedInstitutionId;
+    } else {
+        $institutionId = $actor['institution_id'];
+        if ($submittedInstitutionId !== null && $submittedInstitutionId !== '') {
+            $submittedId = filter_var($submittedInstitutionId, FILTER_VALIDATE_INT);
+            if ($submittedId === false || $submittedId < 1) {
+                throw new InvalidArgumentException('The submitted institution is invalid.');
+            }
+            if ((int) $submittedId !== $institutionId) {
+                throw new OutOfBoundsException('You cannot create a parent in another institution.');
+            }
+        }
+    }
+
+    $statement = $db->prepare(
+        "SELECT id FROM institutions WHERE id = ? AND status = 'active' LIMIT 1"
+    );
+    $statement->bind_param('i', $institutionId);
+    $statement->execute();
+    $activeInstitution = $statement->get_result()->fetch_assoc();
+    $statement->close();
+    if (!is_array($activeInstitution)) {
+        throw new InvalidArgumentException('Choose an existing active institution.');
+    }
+
+    return $institutionId;
+}
+
+function parent_management_assert_create_authorized(
+    mysqli $db,
     int $institutionId,
+    int $actorUserId,
+    string $actorType
+): void {
+    $actor = parent_management_create_actor_record($db, $actorUserId, $actorType);
+    $authenticatedUser = current_user();
+    if ($authenticatedUser === null
+        || (int) $authenticatedUser['id'] !== $actorUserId
+        || $authenticatedUser['user_type'] !== $actorType
+        || (int) $authenticatedUser['institution_id'] !== $actor['institution_id']
+        || (isset($authenticatedUser['role_is_system'])
+            && $authenticatedUser['role_is_system'] !== ((int) $actor['role_is_system'] === 1))
+        || $institutionId < 1
+        || ($actorType !== 'super_admin' && $actor['institution_id'] !== $institutionId)) {
+        throw new OutOfBoundsException('You cannot create a parent in another institution.');
+    }
+
+    $statement = $db->prepare(
+        "SELECT id FROM institutions WHERE id = ? AND status = 'active' LIMIT 1"
+    );
+    $statement->bind_param('i', $institutionId);
+    $statement->execute();
+    $activeInstitution = $statement->get_result()->fetch_assoc();
+    $statement->close();
+    if (!is_array($activeInstitution)) {
+        throw new InvalidArgumentException('Choose an existing active institution.');
+    }
+}
+
+function parent_management_prepare_list_filters(
+    ?int $institutionId,
     string $search,
     string $status,
     string $link
 ): array {
-    $where = ['p.institution_id = ?'];
-    $values = [$institutionId];
-    $types = 'i';
+    $where = [];
+    $values = [];
+    $types = '';
+    if ($institutionId !== null) {
+        $where[] = 'p.institution_id = ?';
+        $values[] = $institutionId;
+        $types .= 'i';
+    }
 
     if ($status !== '') {
         $where[] = 'p.status = ?';
@@ -77,6 +279,8 @@ function parent_management_prepare_list_filters(
 
 function parent_management_get_summary(mysqli $db, int $institutionId): array
 {
+    $isSuperAdmin = parent_management_is_super_admin();
+    $institutionFilter = $isSuperAdmin ? '' : ' AND p.institution_id = ?';
     $statement = $db->prepare(
         'SELECT COUNT(DISTINCT p.id) AS total_count,
                 COUNT(DISTINCT IF(p.status = \'active\', p.id, NULL)) AS active_count,
@@ -88,9 +292,11 @@ function parent_management_get_summary(mysqli $db, int $institutionId): array
          LEFT JOIN parent_student_relationships psr
            ON psr.institution_id = p.institution_id
           AND psr.parent_id = p.id AND psr.status = \'active\'
-         WHERE p.institution_id = ? AND u.user_type = \'parent\''
+         WHERE u.user_type = \'parent\'' . $institutionFilter
     );
-    $statement->bind_param('i', $institutionId);
+    if (!$isSuperAdmin) {
+        $statement->bind_param('i', $institutionId);
+    }
     $statement->execute();
     $summary = $statement->get_result()->fetch_assoc();
     $statement->close();
@@ -104,7 +310,7 @@ function parent_management_get_summary(mysqli $db, int $institutionId): array
 
 function parent_management_list(
     mysqli $db,
-    int $institutionId,
+    ?int $institutionId,
     string $search,
     string $status,
     string $link,
@@ -116,13 +322,14 @@ function parent_management_list(
         $status,
         $link
     );
+    $whereClause = $where === '' ? '' : $where . ' AND ';
 
     $countStatement = $db->prepare(
         "SELECT COUNT(*) AS result_count
          FROM parents p
          JOIN users u ON u.institution_id = p.institution_id AND u.id = p.user_id
          JOIN roles r ON r.id = u.role_id AND r.name = 'parent'
-         WHERE {$where} AND u.user_type = 'parent'"
+         WHERE {$whereClause}u.user_type = 'parent'"
     );
     parent_management_bind_params($countStatement, $filterTypes, $filterValues);
     $countStatement->execute();
@@ -136,17 +343,19 @@ function parent_management_list(
     $queryValues = [...$filterValues, $pageSize, $offset];
     $queryTypes = $filterTypes . 'ii';
     $statement = $db->prepare(
-        "SELECT p.id, p.full_name, p.mobile, COALESCE(p.email, u.email) AS email,
+        "SELECT p.id, p.institution_id, i.name AS institution_name,
+                p.full_name, p.mobile, COALESCE(p.email, u.email) AS email,
                 p.relationship_to_student, p.status, p.created_at,
                 (u.email_verified_at IS NOT NULL) AS email_verified,
                 COUNT(DISTINCT IF(psr.status = 'active', psr.student_id, NULL)) AS linked_student_count
          FROM parents p
          JOIN users u ON u.institution_id = p.institution_id AND u.id = p.user_id
          JOIN roles r ON r.id = u.role_id AND r.name = 'parent'
+         JOIN institutions i ON i.id = p.institution_id
          LEFT JOIN parent_student_relationships psr
            ON psr.institution_id = p.institution_id AND psr.parent_id = p.id
-         WHERE {$where} AND u.user_type = 'parent'
-         GROUP BY p.id, u.id
+         WHERE {$whereClause}u.user_type = 'parent'
+         GROUP BY p.id, p.institution_id, i.name, u.id
          ORDER BY p.created_at DESC, p.id DESC
          LIMIT ? OFFSET ?"
     );
@@ -156,6 +365,7 @@ function parent_management_list(
     $parents = [];
     while ($row = $result->fetch_assoc()) {
         $row['id'] = (int) $row['id'];
+        $row['institution_id'] = (int) $row['institution_id'];
         $row['linked_student_count'] = (int) $row['linked_student_count'];
         $parents[] = $row;
     }
@@ -247,6 +457,161 @@ function parent_management_get_linked_students(mysqli $db, int $institutionId, i
     $statement->close();
 
     return $students;
+}
+
+function parent_management_get_affiliation_context(mysqli $db, int $institutionId, int $parentId): ?array
+{
+    $statement = $db->prepare(
+        'SELECT i.id, i.name, i.status
+         FROM parents p
+         JOIN institutions i ON i.id = p.institution_id
+         WHERE p.institution_id = ? AND p.id = ?
+         LIMIT 1'
+    );
+    $statement->bind_param('ii', $institutionId, $parentId);
+    $statement->execute();
+    $institution = $statement->get_result()->fetch_assoc();
+    $statement->close();
+    if (!is_array($institution)) {
+        return null;
+    }
+
+    $statement = $db->prepare(
+        'SELECT psr.id AS relationship_id, psr.student_id, psr.relationship_type,
+                psr.is_primary, psr.can_view_academics, psr.can_view_fees,
+                psr.can_make_payments, psr.status AS relationship_status,
+                psr.created_at, psr.updated_at, s.institution_id AS student_institution_id,
+                si.name AS student_institution_name, s.student_code, s.full_name,
+                s.status AS student_status, s.academic_year_id,
+                s.course_id, s.class_id, s.batch_id
+         FROM parent_student_relationships psr
+         JOIN students s ON s.institution_id = psr.institution_id AND s.id = psr.student_id
+         JOIN institutions si ON si.id = s.institution_id
+         WHERE psr.institution_id = ? AND psr.parent_id = ?
+         ORDER BY s.full_name, s.student_code, psr.id'
+    );
+    $statement->bind_param('ii', $institutionId, $parentId);
+    $statement->execute();
+    $result = $statement->get_result();
+    $students = [];
+    while ($student = $result->fetch_assoc()) {
+        foreach (['relationship_id', 'student_id', 'student_institution_id'] as $field) {
+            $student[$field] = (int) $student[$field];
+        }
+        foreach (['academic_year_id', 'course_id', 'class_id', 'batch_id'] as $field) {
+            $student[$field] = $student[$field] === null ? null : (int) $student[$field];
+        }
+        $students[] = $student;
+    }
+    $statement->close();
+
+    return ['current_institution' => $institution, 'students' => $students];
+}
+
+function parent_management_affiliation_reference_counts(
+    mysqli $db,
+    string $referencedTable,
+    int $recordId,
+    array $excludedTables = []
+): array {
+    $statement = $db->prepare(
+        'SELECT DISTINCT TABLE_NAME, COLUMN_NAME
+         FROM information_schema.KEY_COLUMN_USAGE
+         WHERE CONSTRAINT_SCHEMA = DATABASE()
+           AND REFERENCED_TABLE_NAME = ?
+           AND REFERENCED_COLUMN_NAME = \'id\''
+    );
+    $statement->bind_param('s', $referencedTable);
+    $statement->execute();
+    $result = $statement->get_result();
+    $references = [];
+    while ($reference = $result->fetch_assoc()) {
+        $references[] = $reference;
+    }
+    $statement->close();
+
+    $counts = [];
+    foreach ($references as $reference) {
+        $table = (string) $reference['TABLE_NAME'];
+        $column = (string) $reference['COLUMN_NAME'];
+        if (in_array($table, $excludedTables, true)) {
+            continue;
+        }
+        if (preg_match('/\A[A-Za-z0-9_]+\z/D', $table) !== 1
+            || preg_match('/\A[A-Za-z0-9_]+\z/D', $column) !== 1) {
+            throw new RuntimeException('An affiliation dependency has an unsupported database identifier.');
+        }
+
+        $query = 'SELECT COUNT(*) AS result_count FROM `' . $table . '` WHERE `' . $column . '` = ?';
+        $countStatement = $db->prepare($query);
+        $countStatement->bind_param('i', $recordId);
+        $countStatement->execute();
+        $count = (int) $countStatement->get_result()->fetch_assoc()['result_count'];
+        $countStatement->close();
+        if ($count > 0) {
+            $counts[$table] = ($counts[$table] ?? 0) + $count;
+        }
+    }
+
+    return $counts;
+}
+
+function parent_management_user_tenant_reference_counts(mysqli $db, int $userId): array
+{
+    $statement = $db->prepare(
+        'SELECT DISTINCT TABLE_NAME, CONSTRAINT_NAME
+         FROM information_schema.KEY_COLUMN_USAGE
+         WHERE CONSTRAINT_SCHEMA = DATABASE()
+           AND REFERENCED_TABLE_NAME = \'users\'
+           AND REFERENCED_COLUMN_NAME = \'institution_id\''
+    );
+    $statement->execute();
+    $constraints = $statement->get_result()->fetch_all(MYSQLI_ASSOC);
+    $statement->close();
+
+    $counts = [];
+    foreach ($constraints as $constraint) {
+        $table = (string) $constraint['TABLE_NAME'];
+        $constraintName = (string) $constraint['CONSTRAINT_NAME'];
+        $columns = $db->prepare(
+            'SELECT COLUMN_NAME, REFERENCED_COLUMN_NAME
+             FROM information_schema.KEY_COLUMN_USAGE
+             WHERE CONSTRAINT_SCHEMA = DATABASE()
+               AND TABLE_NAME = ? AND CONSTRAINT_NAME = ?'
+        );
+        $columns->bind_param('ss', $table, $constraintName);
+        $columns->execute();
+        $columnRows = $columns->get_result()->fetch_all(MYSQLI_ASSOC);
+        $columns->close();
+        $userColumn = null;
+        foreach ($columnRows as $columnRow) {
+            if ($columnRow['REFERENCED_COLUMN_NAME'] === 'id') {
+                $userColumn = (string) $columnRow['COLUMN_NAME'];
+                break;
+            }
+        }
+        if ($userColumn === null
+            || preg_match('/\A[A-Za-z0-9_]+\z/D', $table) !== 1
+            || preg_match('/\A[A-Za-z0-9_]+\z/D', $userColumn) !== 1) {
+            throw new RuntimeException('A user affiliation dependency has an unsupported database identifier.');
+        }
+        if (in_array($table, ['user_sessions', 'user_otp_verifications'], true)) {
+            continue;
+        }
+
+        $countStatement = $db->prepare(
+            'SELECT COUNT(*) AS result_count FROM `' . $table . '` WHERE `' . $userColumn . '` = ?'
+        );
+        $countStatement->bind_param('i', $userId);
+        $countStatement->execute();
+        $count = (int) $countStatement->get_result()->fetch_assoc()['result_count'];
+        $countStatement->close();
+        if ($count > 0) {
+            $counts[$table] = ($counts[$table] ?? 0) + $count;
+        }
+    }
+
+    return $counts;
 }
 
 function parent_management_validate_profile(array $input): array
@@ -358,6 +723,8 @@ function parent_management_old_form_values(array $input, string $form, ?int $par
         'country',
         'emergency_contact',
         'initial_status',
+        'institution_id',
+        'affiliation_target_institution_id',
     ] as $field) {
         if (array_key_exists($field, $input)) {
             $values[$field] = is_string($input[$field]) ? trim($input[$field]) : '';
@@ -368,6 +735,14 @@ function parent_management_old_form_values(array $input, string $form, ?int $par
         foreach ($input['student_ids'] as $studentId) {
             if (is_string($studentId) || is_int($studentId)) {
                 $values['student_ids'][] = (string) $studentId;
+            }
+        }
+    }
+    $values['affiliation_student_ids'] = [];
+    if (is_array($input['affiliation_student_ids'] ?? null)) {
+        foreach ($input['affiliation_student_ids'] as $studentId) {
+            if (is_string($studentId) || is_int($studentId)) {
+                $values['affiliation_student_ids'][] = (string) $studentId;
             }
         }
     }
@@ -576,13 +951,19 @@ function parent_management_create(
 
     $db->begin_transaction();
     try {
+        parent_management_assert_create_authorized($db, $institutionId, $actorUserId, $actorType);
         parent_management_assert_unique_contact(
             $db,
             $institutionId,
             $profile['email'],
             $profile['mobile']
         );
-        $statement = $db->prepare('SELECT id FROM roles WHERE name = \'parent\' LIMIT 1');
+        $statement = $db->prepare(
+            "SELECT id FROM roles
+             WHERE BINARY name = BINARY 'parent' AND is_system = 1
+               AND institution_id IS NULL AND is_active = 1
+             LIMIT 1"
+        );
         $statement->execute();
         $role = $statement->get_result()->fetch_assoc();
         $statement->close();
@@ -824,6 +1205,432 @@ function parent_management_update(
     } catch (Throwable $exception) {
         $db->rollback();
         throw $exception;
+    }
+}
+
+function parent_management_transfer_affiliation(
+    mysqli $db,
+    int $sourceInstitutionId,
+    int $parentId,
+    int $targetInstitutionId,
+    array $selectedStudentIds,
+    int $actorUserId
+): array {
+    if ($sourceInstitutionId < 1 || $parentId < 1 || $targetInstitutionId < 1 || $actorUserId < 1) {
+        throw new InvalidArgumentException('The institution affiliation request is invalid.');
+    }
+
+    $selectedStudentIds = parent_management_student_ids($selectedStudentIds);
+    $transferVariableSet = false;
+    $db->begin_transaction();
+    try {
+        $actor = $db->prepare(
+            "SELECT u.id
+             FROM users u
+             JOIN roles r ON r.id = u.role_id
+             JOIN institutions i ON i.id = u.institution_id
+             WHERE u.id = ? AND u.user_type = 'super_admin' AND u.status = 'active'
+               AND r.is_system = 1 AND r.institution_id IS NULL
+               AND BINARY r.name = BINARY 'super_admin' AND i.status = 'active'
+             LIMIT 1 FOR UPDATE"
+        );
+        $actor->bind_param('i', $actorUserId);
+        $actor->execute();
+        $authorizedActor = $actor->get_result()->fetch_assoc();
+        $actor->close();
+        if (!is_array($authorizedActor)) {
+            throw new OutOfBoundsException('Only an active Super Admin can correct institution affiliations.');
+        }
+
+        $parentLock = $db->prepare(
+            "SELECT p.id, p.institution_id, p.user_id, p.mobile, p.email,
+                    u.email AS account_email, u.mobile AS account_mobile, u.username
+             FROM parents p
+             JOIN users u ON u.id = p.user_id AND u.institution_id = p.institution_id
+             JOIN roles r ON r.id = u.role_id AND r.name = 'parent'
+             WHERE p.institution_id = ? AND p.id = ? AND u.user_type = 'parent'
+             LIMIT 1 FOR UPDATE"
+        );
+        $parentLock->bind_param('ii', $sourceInstitutionId, $parentId);
+        $parentLock->execute();
+        $parent = $parentLock->get_result()->fetch_assoc();
+        $parentLock->close();
+        if (!is_array($parent)) {
+            throw new OutOfBoundsException('The parent record was not found in the current institution.');
+        }
+        $userId = (int) $parent['user_id'];
+        if ($targetInstitutionId === $sourceInstitutionId) {
+            throw new InvalidArgumentException('Choose a different institution to correct this affiliation.');
+        }
+
+        $targetLock = $db->prepare(
+            "SELECT id FROM institutions WHERE id = ? AND status = 'active' LIMIT 1 FOR UPDATE"
+        );
+        $targetLock->bind_param('i', $targetInstitutionId);
+        $targetLock->execute();
+        $target = $targetLock->get_result()->fetch_assoc();
+        $targetLock->close();
+        if (!is_array($target)) {
+            throw new InvalidArgumentException('Choose an active institution from the list.');
+        }
+
+        $relationshipsStatement = $db->prepare(
+            'SELECT id, institution_id, parent_id, student_id, relationship_type,
+                    is_primary, can_view_academics, can_view_fees, can_make_payments,
+                    status, created_at, updated_at
+             FROM parent_student_relationships
+             WHERE institution_id = ? AND parent_id = ?
+             ORDER BY student_id, id FOR UPDATE'
+        );
+        $relationshipsStatement->bind_param('ii', $sourceInstitutionId, $parentId);
+        $relationshipsStatement->execute();
+        $relationships = $relationshipsStatement->get_result()->fetch_all(MYSQLI_ASSOC);
+        $relationshipsStatement->close();
+
+        $linkedStudentIds = array_values(array_unique(array_map(
+            static fn(array $relationship): int => (int) $relationship['student_id'],
+            $relationships
+        )));
+        $expectedStudentIds = $linkedStudentIds;
+        $submittedStudentIds = $selectedStudentIds;
+        sort($expectedStudentIds);
+        sort($submittedStudentIds);
+        if ($expectedStudentIds !== $submittedStudentIds) {
+            throw new InvalidArgumentException(
+                'Select every student linked to this parent. Tenant-scoped parent-student links cannot be left in the previous institution.'
+            );
+        }
+
+        $students = [];
+        if ($linkedStudentIds !== []) {
+            $placeholders = implode(',', array_fill(0, count($linkedStudentIds), '?'));
+            $studentQuery = $db->prepare(
+                'SELECT id, institution_id, student_code, photo_path, academic_year_id,
+                        course_id, class_id, batch_id
+                 FROM students
+                 WHERE institution_id = ? AND id IN (' . $placeholders . ')
+                 ORDER BY id FOR UPDATE'
+            );
+            $studentValues = [$sourceInstitutionId, ...$linkedStudentIds];
+            $studentTypes = str_repeat('i', count($studentValues));
+            parent_management_bind_params($studentQuery, $studentTypes, $studentValues);
+            $studentQuery->execute();
+            $students = $studentQuery->get_result()->fetch_all(MYSQLI_ASSOC);
+            $studentQuery->close();
+            if (count($students) !== count($linkedStudentIds)) {
+                throw new OutOfBoundsException('One or more linked students are no longer in the parent institution.');
+            }
+        }
+
+        $affiliationBlockers = [];
+        $parentDependencies = parent_management_affiliation_reference_counts(
+            $db,
+            'parents',
+            $parentId,
+            ['parent_student_relationships']
+        );
+        if ($parentDependencies !== []) {
+            $tables = implode(', ', array_keys($parentDependencies));
+            $affiliationBlockers[] =
+                'This parent has institution-bound records (' . $tables . ') that cannot be safely transferred. No changes were made.';
+        }
+
+        $userDependencies = parent_management_user_tenant_reference_counts($db, $userId);
+        if ($userDependencies !== []) {
+            $tables = implode(', ', array_keys($userDependencies));
+            $affiliationBlockers[] =
+                'This parent account has institution-bound records (' . $tables . ') that cannot be safely transferred. No changes were made.';
+        }
+
+        foreach ($students as $student) {
+            $studentId = (int) $student['id'];
+            $studentDependencies = parent_management_affiliation_reference_counts(
+                $db,
+                'students',
+                $studentId,
+                ['parent_student_relationships']
+            );
+            if ($studentDependencies !== []) {
+                $tables = implode(', ', array_keys($studentDependencies));
+                $affiliationBlockers[] =
+                    'Student #' . $studentId . ' has institution-bound records (' . $tables . '), including possible fee, payment, receipt, attendance, or academic history. No records were moved.';
+            }
+
+            if ($student['photo_path'] !== null && $student['photo_path'] !== '') {
+                $affiliationBlockers[] =
+                    'Student #' . $studentId . ' has an uploaded photo. Its institution-specific file cannot be safely transferred.';
+            }
+
+            foreach (['academic_year_id', 'course_id', 'class_id', 'batch_id'] as $field) {
+                if ($student[$field] !== null) {
+                    $affiliationBlockers[] =
+                        'Student #' . $studentId . ' has an assigned academic year, course, class, or batch. Reassigning it could invalidate academic records, so the transfer was blocked.';
+                    break;
+                }
+            }
+
+            $otherParent = $db->prepare(
+                'SELECT COUNT(*) AS result_count
+                 FROM parent_student_relationships
+                 WHERE student_id = ? AND parent_id <> ?'
+            );
+            $otherParent->bind_param('ii', $studentId, $parentId);
+            $otherParent->execute();
+            $otherParentCount = (int) $otherParent->get_result()->fetch_assoc()['result_count'];
+            $otherParent->close();
+            if ($otherParentCount > 0) {
+                $affiliationBlockers[] =
+                    'Student #' . $studentId . ' is also linked to another parent. All linked parent accounts must be resolved before transferring this student.';
+            }
+
+            $codeCheck = $db->prepare(
+                'SELECT id FROM students
+                 WHERE institution_id = ? AND student_code = ? AND id <> ?
+                 LIMIT 1'
+            );
+            $studentCode = (string) $student['student_code'];
+            $codeCheck->bind_param('isi', $targetInstitutionId, $studentCode, $studentId);
+            $codeCheck->execute();
+            $duplicateCode = $codeCheck->get_result()->fetch_assoc();
+            $codeCheck->close();
+            if (is_array($duplicateCode)) {
+                throw new InvalidArgumentException(
+                    'Student code ' . $studentCode . ' already exists in the selected institution.'
+                );
+            }
+        }
+
+        if ($affiliationBlockers !== []) {
+            throw new InvalidArgumentException(implode(' ', array_unique($affiliationBlockers)));
+        }
+
+        $email = $parent['account_email'];
+        $mobile = $parent['account_mobile'];
+        $username = $parent['username'];
+        $duplicateUser = $db->prepare(
+            'SELECT id FROM users
+             WHERE institution_id = ? AND id <> ?
+               AND ((? IS NOT NULL AND email = ?)
+                 OR (? IS NOT NULL AND mobile = ?)
+                 OR (? IS NOT NULL AND username = ?))
+             LIMIT 1'
+        );
+        $duplicateUser->bind_param(
+            'iissssss',
+            $targetInstitutionId,
+            $userId,
+            $email,
+            $email,
+            $mobile,
+            $mobile,
+            $username,
+            $username
+        );
+        $duplicateUser->execute();
+        $duplicateUserRow = $duplicateUser->get_result()->fetch_assoc();
+        $duplicateUser->close();
+        if (is_array($duplicateUserRow)) {
+            throw new InvalidArgumentException(
+                'The destination institution already has an account with this parent\'s email, mobile number, or username.'
+            );
+        }
+
+        $duplicateParent = $db->prepare(
+            'SELECT id FROM parents
+             WHERE institution_id = ? AND mobile = ? AND id <> ?
+             LIMIT 1'
+        );
+        $parentMobile = (string) $parent['mobile'];
+        $duplicateParent->bind_param('isi', $targetInstitutionId, $parentMobile, $parentId);
+        $duplicateParent->execute();
+        $duplicateParentRow = $duplicateParent->get_result()->fetch_assoc();
+        $duplicateParent->close();
+        if (is_array($duplicateParentRow)) {
+            throw new InvalidArgumentException(
+                'The parent mobile number is already registered in the selected institution.'
+            );
+        }
+
+        $statement = $db->prepare('SET @fees_parent_affiliation_transfer_user_id = ?');
+        $statement->bind_param('i', $userId);
+        $statement->execute();
+        $statement->close();
+        $transferVariableSet = true;
+
+        $statement = $db->prepare(
+            'UPDATE user_sessions
+             SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
+             WHERE user_id = ? AND institution_id = ?'
+        );
+        $statement->bind_param('ii', $userId, $sourceInstitutionId);
+        $statement->execute();
+        $statement->close();
+        $statement = $db->prepare(
+            "UPDATE user_otp_verifications
+             SET status = 'invalidated'
+             WHERE user_id = ? AND institution_id = ? AND status = 'pending'"
+        );
+        $statement->bind_param('ii', $userId, $sourceInstitutionId);
+        $statement->execute();
+        $statement->close();
+
+        if ($relationships !== []) {
+            $statement = $db->prepare(
+                'DELETE FROM parent_student_relationships
+                 WHERE institution_id = ? AND parent_id = ?'
+            );
+            $statement->bind_param('ii', $sourceInstitutionId, $parentId);
+            $statement->execute();
+            if ($statement->affected_rows !== count($relationships)) {
+                $statement->close();
+                throw new RuntimeException('The parent-student links changed during the affiliation transfer.');
+            }
+            $statement->close();
+        }
+
+        $statement = $db->prepare(
+            "UPDATE users
+             SET institution_id = ?
+             WHERE id = ? AND institution_id = ? AND user_type = 'parent'"
+        );
+        $statement->bind_param('iii', $targetInstitutionId, $userId, $sourceInstitutionId);
+        $statement->execute();
+        if ($statement->affected_rows !== 1) {
+            $statement->close();
+            throw new RuntimeException('The parent account affiliation could not be updated.');
+        }
+        $statement->close();
+
+        $statement = $db->prepare(
+            'UPDATE parents SET institution_id = ?
+             WHERE id = ? AND institution_id = ? AND user_id = ?'
+        );
+        $statement->bind_param('iiii', $targetInstitutionId, $parentId, $sourceInstitutionId, $userId);
+        $statement->execute();
+        if ($statement->affected_rows !== 1) {
+            $statement->close();
+            throw new RuntimeException('The parent affiliation could not be updated.');
+        }
+        $statement->close();
+
+        foreach ($linkedStudentIds as $studentId) {
+            $statement = $db->prepare(
+                'UPDATE students SET institution_id = ?
+                 WHERE id = ? AND institution_id = ?'
+            );
+            $statement->bind_param('iii', $targetInstitutionId, $studentId, $sourceInstitutionId);
+            $statement->execute();
+            if ($statement->affected_rows !== 1) {
+                $statement->close();
+                throw new RuntimeException('A linked student affiliation could not be updated.');
+            }
+            $statement->close();
+        }
+
+        foreach ($relationships as $relationship) {
+            $relationshipId = (int) $relationship['id'];
+            $studentId = (int) $relationship['student_id'];
+            $relationshipType = (string) $relationship['relationship_type'];
+            $isPrimary = (int) $relationship['is_primary'];
+            $canViewAcademics = (int) $relationship['can_view_academics'];
+            $canViewFees = (int) $relationship['can_view_fees'];
+            $canMakePayments = (int) $relationship['can_make_payments'];
+            $status = (string) $relationship['status'];
+            $createdAt = (string) $relationship['created_at'];
+            $updatedAt = (string) $relationship['updated_at'];
+            $statement = $db->prepare(
+                'INSERT INTO parent_student_relationships (
+                    id, institution_id, parent_id, student_id, relationship_type,
+                    is_primary, can_view_academics, can_view_fees, can_make_payments,
+                    status, created_at, updated_at
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            );
+            $statement->bind_param(
+                'iiiisiiiisss',
+                $relationshipId,
+                $targetInstitutionId,
+                $parentId,
+                $studentId,
+                $relationshipType,
+                $isPrimary,
+                $canViewAcademics,
+                $canViewFees,
+                $canMakePayments,
+                $status,
+                $createdAt,
+                $updatedAt
+            );
+            $statement->execute();
+            $statement->close();
+        }
+
+        $statement = $db->prepare('SET @fees_parent_affiliation_transfer_user_id = NULL');
+        $statement->execute();
+        $statement->close();
+        $transferVariableSet = false;
+
+        $consistency = $db->prepare(
+            'SELECT COUNT(*) AS mismatch_count
+             FROM parents p
+             JOIN users u ON u.id = p.user_id
+             WHERE p.id = ? AND (
+                 p.institution_id <> ? OR u.institution_id <> ?
+             )'
+        );
+        $consistency->bind_param('iii', $parentId, $targetInstitutionId, $targetInstitutionId);
+        $consistency->execute();
+        $mismatchCount = (int) $consistency->get_result()->fetch_assoc()['mismatch_count'];
+        $consistency->close();
+        if ($mismatchCount !== 0) {
+            throw new RuntimeException('The parent and account institution consistency check failed.');
+        }
+
+        $oldValues = [
+            'institution_id' => $sourceInstitutionId,
+            'parent_id' => $parentId,
+            'user_id' => $userId,
+            'student_ids' => $linkedStudentIds,
+            'relationship_records' => $relationships,
+        ];
+        $newValues = [
+            'institution_id' => $targetInstitutionId,
+            'parent_id' => $parentId,
+            'user_id' => $userId,
+            'student_ids' => $linkedStudentIds,
+            'relationship_ids' => array_values(array_map(
+                static fn(array $relationship): int => (int) $relationship['id'],
+                $relationships
+            )),
+        ];
+        write_audit_log(
+            $db,
+            $sourceInstitutionId,
+            $actorUserId,
+            'super_admin',
+            'parent.institution_affiliation_corrected',
+            'parent',
+            (string) $parentId,
+            $oldValues,
+            $newValues
+        );
+        $db->commit();
+
+        return [
+            'parent_id' => $parentId,
+            'user_id' => $userId,
+            'previous_institution_id' => $sourceInstitutionId,
+            'new_institution_id' => $targetInstitutionId,
+            'student_ids' => $linkedStudentIds,
+        ];
+    } catch (Throwable $exception) {
+        $db->rollback();
+        throw $exception;
+    } finally {
+        if ($transferVariableSet) {
+            $statement = $db->prepare('SET @fees_parent_affiliation_transfer_user_id = NULL');
+            $statement->execute();
+            $statement->close();
+        }
     }
 }
 

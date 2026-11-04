@@ -1,0 +1,370 @@
+.academic-years-page {
+    display: grid;
+    gap: 1rem;
+    padding-bottom: 1.5rem;
+}
+
+.academic-years-page > .alert {
+    margin: 0;
+    border-radius: 12px;
+}
+
+.academic-year-summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: .85rem;
+}
+
+.academic-year-summary-card {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: .75rem;
+    padding: .95rem 1rem;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--brand-surface-background);
+    box-shadow: 0 5px 18px rgb(22 48 86 / 4%);
+}
+
+.academic-year-summary-icon,
+.academic-year-section-icon {
+    display: grid;
+    width: 2.5rem;
+    height: 2.5rem;
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: 12px;
+    color: var(--brand-primary);
+    background: color-mix(in srgb, var(--brand-primary) 9%, var(--brand-surface-background));
+    font-size: 1.05rem;
+}
+
+.academic-year-summary-card > div {
+    display: grid;
+    min-width: 0;
+    gap: .1rem;
+}
+
+.academic-year-summary-card > div > span {
+    overflow: hidden;
+    color: var(--muted);
+    font-size: .71rem;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.academic-year-summary-card > div > strong {
+    color: var(--ink);
+    font-size: 1.3rem;
+    font-weight: 700;
+    letter-spacing: -.04em;
+    line-height: 1.2;
+}
+
+.academic-year-summary-active .academic-year-summary-icon {
+    color: #16764e;
+    background: #eaf8f1;
+}
+
+.academic-year-summary-draft .academic-year-summary-icon {
+    color: #99680a;
+    background: #fff6e3;
+}
+
+.academic-year-summary-closed .academic-year-summary-icon {
+    color: #647188;
+    background: #f0f3f7;
+}
+
+.academic-year-create-card,
+.academic-year-list-card {
+    margin: 0;
+    padding: clamp(1.05rem, 2.2vw, 1.45rem);
+    border-radius: 17px;
+}
+
+.academic-year-section-heading {
+    display: flex;
+    align-items: center;
+    gap: .8rem;
+    margin-bottom: 1rem;
+}
+
+.academic-year-section-heading h2,
+.academic-year-list-heading h2 {
+    margin: .15rem 0 .2rem;
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: -.02em;
+}
+
+.academic-year-section-heading p,
+.academic-year-list-heading p {
+    margin: 0;
+    color: var(--muted);
+    font-size: .74rem;
+    line-height: 1.5;
+}
+
+.academic-year-kicker {
+    color: var(--brand-secondary);
+    font-size: .62rem;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+}
+
+.academic-year-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1.3fr) repeat(2, minmax(0, 1fr)) auto;
+    align-items: end;
+    gap: .8rem;
+}
+
+.academic-year-form .admin-form-field {
+    min-width: 0;
+    margin: 0;
+    color: #34425b;
+    font-size: .73rem;
+    font-weight: 600;
+}
+
+.academic-year-form .form-control {
+    min-height: 43px;
+    margin-top: .35rem;
+    border-color: #dce4ef;
+    border-radius: 9px;
+    font-size: .8rem;
+}
+
+.academic-year-form .form-control:focus {
+    border-color: var(--cobalt-300);
+    box-shadow: 0 0 0 .2rem color-mix(in srgb, var(--brand-primary) 13%, transparent);
+}
+
+.academic-year-form-action {
+    padding-bottom: 1px;
+}
+
+.academic-year-form-action .btn {
+    min-height: 43px;
+    white-space: nowrap;
+}
+
+.academic-year-list-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: .9rem;
+}
+
+.academic-year-count {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: .4rem;
+    padding: .4rem .65rem;
+    border: 1px solid color-mix(in srgb, var(--brand-primary) 14%, var(--line));
+    border-radius: 999px;
+    color: var(--brand-secondary);
+    background: color-mix(in srgb, var(--brand-primary) 5%, var(--brand-surface-background));
+    font-size: .68rem;
+    font-weight: 700;
+}
+
+.academic-year-table-wrap {
+    overflow: auto;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+}
+
+.academic-year-table {
+    min-width: 650px;
+    margin: 0;
+    font-size: .75rem;
+}
+
+.academic-year-table thead th {
+    padding: .75rem .85rem;
+    border-bottom: 1px solid var(--line);
+    color: #748198;
+    background: color-mix(in srgb, var(--brand-primary) 4%, var(--brand-surface-background));
+    font-size: .63rem;
+    letter-spacing: .045em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.academic-year-table tbody td {
+    padding: .8rem .85rem;
+    border-color: #edf0f5;
+    color: #40536e;
+    vertical-align: middle;
+}
+
+.academic-year-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.academic-year-table tbody tr:hover td {
+    background: color-mix(in srgb, var(--brand-primary) 2.5%, var(--brand-surface-background));
+}
+
+.academic-year-name {
+    display: block;
+    color: var(--ink);
+    font-size: .8rem;
+    font-weight: 700;
+}
+
+.academic-year-table td:first-child small {
+    display: block;
+    margin-top: .15rem;
+    color: #8995a9;
+    font-size: .65rem;
+}
+
+.academic-year-date-range {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    color: #53627d;
+    white-space: nowrap;
+}
+
+.academic-year-date-range > i {
+    color: var(--brand-primary);
+}
+
+.academic-year-status {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    padding: .32rem .55rem;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    font-size: .65rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.academic-year-status > i {
+    width: .4rem;
+    height: .4rem;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.academic-year-status-active {
+    border-color: #b9e7d2;
+    color: #14724c;
+    background: #eaf8f1;
+}
+
+.academic-year-status-draft {
+    border-color: #f2d89b;
+    color: #8a620d;
+    background: #fff7e5;
+}
+
+.academic-year-status-closed,
+.academic-year-status-other {
+    border-color: #dce2eb;
+    color: #647188;
+    background: #f2f4f7;
+}
+
+.academic-year-locked {
+    color: #75829a;
+    font-size: .7rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.academic-year-empty {
+    display: grid;
+    min-height: 190px;
+    justify-items: center;
+    align-content: center;
+    padding: 1.5rem;
+    border: 1px dashed #cbd5e5;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--brand-primary) 2%, var(--brand-surface-background));
+    text-align: center;
+}
+
+.academic-year-empty > span {
+    display: grid;
+    width: 2.8rem;
+    height: 2.8rem;
+    margin-bottom: .7rem;
+    place-items: center;
+    border-radius: 13px;
+    color: var(--brand-primary);
+    background: color-mix(in srgb, var(--brand-primary) 9%, var(--brand-surface-background));
+    font-size: 1.2rem;
+}
+
+.academic-year-empty strong {
+    color: var(--ink);
+    font-size: .86rem;
+}
+
+.academic-year-empty p {
+    margin: .3rem 0 0;
+    color: var(--muted);
+    font-size: .74rem;
+}
+
+@media (max-width: 1000px) {
+    .academic-year-form {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .academic-year-form-action {
+        grid-column: 1 / -1;
+        justify-self: end;
+    }
+}
+
+@media (max-width: 650px) {
+    .academic-year-summary {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: .6rem;
+    }
+
+    .academic-year-summary-card {
+        padding: .75rem;
+    }
+
+    .academic-year-summary-icon {
+        width: 2.15rem;
+        height: 2.15rem;
+        border-radius: 10px;
+    }
+}
+
+@media (max-width: 480px) {
+    .academic-year-form {
+        grid-template-columns: 1fr;
+    }
+
+    .academic-year-form-action {
+        grid-column: auto;
+        justify-self: stretch;
+    }
+
+    .academic-year-form-action .btn {
+        width: 100%;
+    }
+
+    .academic-year-list-heading {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}

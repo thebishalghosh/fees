@@ -7,13 +7,18 @@ require_once __DIR__ . '/../../services/parent-email-verification-service.php';
 
 require_http_methods(['GET', 'HEAD']);
 require_placeholder_route_access();
-$institutionId = parent_management_institution_id();
 $parentId = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT);
 if (!is_int($parentId) || $parentId < 1) {
     http_response_code(404);
     exit('Parent not found.');
 }
-$parent = parent_management_get_parent(db_connect(), $institutionId, $parentId);
+$db = db_connect();
+$institutionId = parent_management_resolve_parent_institution_id($db, $parentId);
+if ($institutionId === null) {
+    http_response_code(404);
+    exit('Parent not found.');
+}
+$parent = parent_management_get_parent($db, $institutionId, $parentId);
 if ($parent === null) {
     http_response_code(404);
     exit('Parent not found.');

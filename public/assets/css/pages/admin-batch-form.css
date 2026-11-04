@@ -1,0 +1,232 @@
+.batch-form-breadcrumb {
+    margin: 0 0 1rem;
+}
+
+.batch-form-breadcrumb .breadcrumb {
+    margin: 0;
+    font-size: .77rem;
+}
+
+.batch-form-breadcrumb a {
+    color: var(--cobalt-700);
+    text-decoration: none;
+}
+
+.batch-form-error {
+    max-width: 920px;
+    margin: 0 auto 1rem;
+    border-radius: 11px;
+}
+
+.batch-form-card {
+    max-width: 920px;
+    margin: 0 auto 2rem;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    background: var(--surface);
+    box-shadow: 0 18px 46px -34px rgb(0 45 110 / 38%);
+}
+
+.batch-form-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1.5rem 1.75rem;
+    border-bottom: 1px solid #edf1f7;
+    background: linear-gradient(110deg, #f5f8fe 0%, #fff 78%);
+}
+
+.batch-form-icon {
+    display: grid;
+    width: 46px;
+    height: 46px;
+    flex: 0 0 46px;
+    place-items: center;
+    border: 1px solid #dce7f8;
+    border-radius: 14px;
+    background: #eaf1fc;
+    color: var(--cobalt-700);
+    font-size: 1.2rem;
+}
+
+.batch-form-eyebrow {
+    color: var(--cobalt-700);
+    font-size: .66rem;
+    font-weight: 750;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+}
+
+.batch-form-header h2 {
+    margin: .18rem 0 .25rem;
+    color: var(--cobalt-900);
+    font-size: 1.15rem;
+    font-weight: 700;
+    letter-spacing: -.025em;
+}
+
+.batch-form-header p {
+    max-width: 620px;
+    margin: 0;
+    color: var(--muted);
+    font-size: .79rem;
+    line-height: 1.55;
+}
+
+.batch-form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.1rem 1.25rem;
+    padding: 1.4rem 1.75rem 0;
+}
+
+.batch-form-section-heading {
+    display: flex;
+    grid-column: 1 / -1;
+    align-items: flex-start;
+    gap: .75rem;
+}
+
+.batch-form-section-heading > span {
+    display: inline-grid;
+    width: 30px;
+    height: 30px;
+    flex: 0 0 30px;
+    place-items: center;
+    border-radius: 9px;
+    background: var(--cobalt-50);
+    color: var(--cobalt-700);
+    font-size: .8rem;
+}
+
+.batch-form-section-heading h3 {
+    margin: .03rem 0 .2rem;
+    color: var(--ink);
+    font-size: .86rem;
+    font-weight: 700;
+}
+
+.batch-form-section-heading p {
+    margin: 0;
+    color: #77849a;
+    font-size: .72rem;
+    line-height: 1.5;
+}
+
+.batch-form-section-spaced {
+    margin-top: .3rem;
+    padding-top: 1.2rem;
+    border-top: 1px solid #edf1f7;
+}
+
+.batch-form-field {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: .42rem;
+    color: #34445e;
+    font-size: .74rem;
+    font-weight: 650;
+}
+
+.batch-form-field > span {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+}
+
+.batch-form-field b {
+    color: #b34c55;
+    font-size: .72rem;
+}
+
+.batch-form-field span small {
+    color: #8995a9;
+    font-size: .63rem;
+    font-weight: 500;
+}
+
+.batch-form-field .form-control,
+.batch-form-field .form-select {
+    min-height: 42px;
+    border-color: #dce4f0;
+    border-radius: 10px;
+    color: var(--ink);
+    font-size: .8rem;
+    box-shadow: none;
+}
+
+.batch-form-field .form-control:focus,
+.batch-form-field .form-select:focus {
+    border-color: #7298d7;
+    box-shadow: 0 0 0 3px rgb(0 71 171 / 10%);
+}
+
+.batch-form-footer {
+    display: flex;
+    grid-column: 1 / -1;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-top: .2rem;
+    padding: 1rem 0 1.25rem;
+    border-top: 1px solid #edf1f7;
+}
+
+.batch-form-cancel {
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    color: #66758c;
+    font-size: .75rem;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.batch-form-cancel:hover {
+    color: var(--cobalt-700);
+}
+
+.batch-form-submit {
+    display: inline-flex;
+    min-height: 42px;
+    align-items: center;
+    justify-content: center;
+    gap: .5rem;
+    padding: .6rem 1rem;
+    border-radius: 10px;
+    font-size: .75rem;
+    font-weight: 650;
+}
+
+@media (max-width: 767.98px) {
+    .batch-form-card {
+        border-radius: 15px;
+    }
+
+    .batch-form-header {
+        padding: 1.2rem;
+    }
+
+    .batch-form {
+        gap: 1rem;
+        padding: 1.2rem 1.2rem 0;
+    }
+}
+
+@media (max-width: 575.98px) {
+    .batch-form {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .batch-form-footer {
+        align-items: stretch;
+        flex-direction: column-reverse;
+    }
+
+    .batch-form-cancel {
+        justify-content: center;
+        padding: .45rem;
+    }
+}

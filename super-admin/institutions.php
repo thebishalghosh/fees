@@ -241,6 +241,7 @@ render_app_page_start(
     ['admin-dashboard.css', 'super-admin-institutions.css']
 );
 ?>
+<div class="super-admin-institutions-page">
 <?php echo render_flash_messages(); ?>
 <?php foreach ($errors as $error): ?><div class="alert alert-danger" role="alert"><?php echo e($error); ?></div><?php endforeach; ?>
 
@@ -459,10 +460,17 @@ render_app_page_start(
         </div>
     </section>
 <?php else: ?>
-    <section class="dashboard-panel admin-form-panel">
-        <h2 class="h5">Create institution</h2>
-        <p class="text-muted">The initial Admin will use the existing institution-code and email OTP sign-in. No password or OTP is created or sent during onboarding; confirm that the administrator can receive email.</p>
-        <form method="post" action="<?php echo e(route_url('/super-admin/institutions')); ?>" class="admin-form-grid">
+    <section class="dashboard-panel admin-form-panel institution-onboarding-card">
+        <div class="institution-onboarding-heading">
+            <span class="institution-detail-icon" aria-hidden="true"><i class="bi bi-building-add"></i></span>
+            <div>
+                <span class="institution-overview-label">New institution</span>
+                <h2>Create institution</h2>
+                <p>Set up the institution profile and its first administrator.</p>
+            </div>
+        </div>
+        <div class="institution-onboarding-note"><i class="bi bi-info-circle" aria-hidden="true"></i><span>The initial Admin signs in using the institution code and email OTP. No password or OTP is created during onboarding. Confirm that the administrator can receive email.</span></div>
+        <form method="post" action="<?php echo e(route_url('/super-admin/institutions')); ?>" class="admin-form-grid institution-onboarding-form">
             <?php echo csrf_field(); ?>
             <input type="hidden" name="action" value="create">
             <?php $renderProfileFields($formValues); ?>
@@ -496,16 +504,23 @@ render_app_page_start(
                 <input class="form-check-input" type="checkbox" name="administrator_email_confirmed" value="1" id="administrator-email-confirmed"<?php echo ($formValues['administrator_email_confirmed'] ?? '') === '1' ? ' checked' : ''; ?> required>
                 <label class="form-check-label" for="administrator-email-confirmed">I confirm that the initial administrator can receive email at this address.</label>
             </div>
-            <div class="admin-form-actions mt-4"><button class="btn btn-cobalt" type="submit">Create institution and administrator</button></div>
+            <div class="admin-form-actions mt-4"><button class="btn btn-cobalt" type="submit"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Create institution and administrator</button></div>
         </form>
     </section>
 <?php endif; ?>
 
-<section class="dashboard-panel admin-recent-payments-panel">
-    <div class="dashboard-panel-heading"><div><h2>Institutions</h2><p><?php echo e((string) count($institutions)); ?> institutions shown (maximum 500).</p></div></div>
-    <form method="get" action="<?php echo e(route_url('/super-admin/institutions')); ?>" class="d-flex flex-wrap gap-2 mb-3">
+<section class="dashboard-panel admin-recent-payments-panel institution-directory-card">
+    <div class="dashboard-panel-heading institution-directory-heading">
+        <div>
+            <span class="institution-overview-label">Directory</span>
+            <h2>Institutions</h2>
+            <p>Search and manage registered institutions.</p>
+        </div>
+        <span class="institution-directory-count"><i class="bi bi-buildings" aria-hidden="true"></i><?php echo e((string) count($institutions)); ?> shown</span>
+    </div>
+    <form method="get" action="<?php echo e(route_url('/super-admin/institutions')); ?>" class="institution-directory-filters">
         <label class="visually-hidden" for="institution-search">Search institutions</label>
-        <input class="form-control" id="institution-search" name="search" maxlength="120" value="<?php echo e($search); ?>" placeholder="Search name, code, email, administrator">
+        <div class="institution-directory-search"><i class="bi bi-search" aria-hidden="true"></i><input class="form-control" id="institution-search" name="search" maxlength="120" value="<?php echo e($search); ?>" placeholder="Search name, code, email, administrator"></div>
         <label class="visually-hidden" for="institution-status">Filter by status</label>
         <select class="form-select" id="institution-status" name="status">
             <option value="">All statuses</option>
@@ -513,12 +528,12 @@ render_app_page_start(
                 <option value="<?php echo e($status); ?>"<?php echo $statusFilter === $status ? ' selected' : ''; ?>><?php echo e(ucfirst($status)); ?></option>
             <?php endforeach; ?>
         </select>
-        <button class="btn btn-outline-primary" type="submit">Filter</button>
+        <button class="btn btn-cobalt" type="submit"><i class="bi bi-funnel me-1" aria-hidden="true"></i>Apply filters</button>
     </form>
     <?php if ($institutions === []): ?>
         <div class="admin-panel-empty"><i class="bi bi-buildings" aria-hidden="true"></i><strong>No institutions found</strong><span>Adjust the search or create an institution above.</span></div>
     <?php else: ?>
-        <div class="table-responsive"><table class="table admin-panel-table align-middle">
+        <div class="table-responsive institution-directory-table-wrap"><table class="table admin-panel-table align-middle institution-directory-table">
             <thead><tr><th>Institution</th><th>Code</th><th>Type</th><th>Official email</th><th>Status</th><th>Administrator</th><th>Created</th><th></th></tr></thead>
             <tbody><?php foreach ($institutions as $row): ?>
                 <tr>
@@ -526,10 +541,10 @@ render_app_page_start(
                     <td><?php echo e($row['code']); ?></td>
                     <td><?php echo e(isset(admin_panel_institution_types()[$row['institution_type'] ?? '']) ? admin_panel_institution_types()[$row['institution_type']] : 'Not set'); ?></td>
                     <td><?php echo e($row['email']); ?></td>
-                    <td><?php echo e(ucfirst((string) $row['status'])); ?></td>
+                    <td><span class="institution-directory-status status-<?php echo e((string) $row['status']); ?>"><?php echo e(ucfirst((string) $row['status'])); ?></span></td>
                     <td><?php echo e($row['administrator_name'] ?? 'Not assigned'); ?><small><?php echo e($row['administrator_email'] ?? ''); ?></small></td>
                     <td><?php echo e($row['created_at']); ?></td>
-                    <td><a class="btn btn-sm btn-outline-primary" href="<?php echo e(route_url('/super-admin/institutions?id=' . (int) $row['id'])); ?>">Details</a></td>
+                    <td><a class="btn btn-sm btn-outline-primary" href="<?php echo e(route_url('/super-admin/institutions?id=' . (int) $row['id'])); ?>">View details<i class="bi bi-arrow-up-right ms-1" aria-hidden="true"></i></a></td>
                 </tr>
             <?php endforeach; ?></tbody>
         </table></div>
@@ -538,4 +553,5 @@ render_app_page_start(
 <?php if ($institution !== null): ?>
     <script src="<?php echo e(APP_URL); ?>/public/assets/js/institution-branding.js" defer></script>
 <?php endif; ?>
+</div>
 <?php render_app_page_end('admin'); ?>

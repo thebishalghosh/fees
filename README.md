@@ -56,6 +56,85 @@ php tests/parent_portal_test.php
 php tests/admin_panel_test.php
 ```
 
+## Multi-tenant identity integrity
+
+Fresh installations created from `database/schema.sql` enforce same-institution
+session and OTP ownership with composite foreign keys. Database triggers also
+ensure user roles are either the matching global system role or a custom role
+owned by the user's institution; custom roles are only assignable to staff.
+Role assignment counts are institution-scoped in the role-management service.
+
+For an existing MySQL 8.4 database, first create and verify a full backup, then
+run the read-only integrity preflight for sessions, OTPs, role assignments, and
+role definitions. Resolve any reported rows through an approved data decision
+before applying `database/migrations/20261103_enforce_tenant_identity_integrity.sql`.
+The migration has blocking preflight checks and MySQL DDL implicit commits. Then
+apply `database/migrations/20261103_enforce_case_sensitive_system_roles.sql` to
+align global role comparisons with the application's exact role-name checks.
+Apply both, in order, once to a local development/test database, not production.
+Keep the verified backup until post-migration checks and authentication/RBAC
+tests pass. Restore the backup if a partial DDL failure cannot be safely repaired.
+
+The database-backed constraint test must run only against a disposable database
+created from a verified backup:
+
+```text
+FEES_ISOLATION_TEST_DB=fees_backup_verify_YYYYMMDD_HHMMSS php tests/multitenant_integrity_test.php
+```
+
+The test inserts two temporary institutions and their user/role fixtures; drop
+the disposable database after the test. The payment and receipt code is outside
+the scope of this migration.
+
+### Parent institution affiliation corrections
+
+The parent edit page exposes **Institution Affiliation** only to an active
+system Super Admin. Before enabling the cross-institution correction workflow
+on an existing MySQL database, take and verify a full backup, then apply
+`database/migrations/20261103_enable_parent_affiliation_transfer.sql` after
+the tenant identity integrity migrations. Fresh installations receive the
+matching constraints and triggers from `database/schema.sql`.
+
+The workflow requires explicit confirmation and selection of every linked
+student. It blocks transfers when a parent or student has institution-bound
+financial, attendance, admissions, notification, or academic records, or when
+a student has an academic-year/course/class/batch assignment or another parent
+link. No payment, receipt, refund, or academic history is transferred. Parent
+relationship rows are retained with their IDs and permissions, re-scoped in
+the same transaction, and the previous affiliation is recorded in the audit
+log. Existing parent sessions are revoked and pending OTP challenges
+invalidated; the parent must sign in again after a successful correction.
+
+Run the integration test only against a disposable database initialized from
+the updated schema or a verified backup:
+
+```text
+FEES_AFFILIATION_TEST_DB=fees_affiliation_verify_YYYYMMDD_HHMMSS php tests/parent_affiliation_test.php
+```
+
+The migration rollback is
+`database/migrations/20261103_enable_parent_affiliation_transfer.down.sql`.
+It refuses rollback while parent/account, session, or OTP tenant associations
+are inconsistent. Review all transfers and take a new backup before rollback.
+
+### Parent creation institution assignment
+
+Parent creation resolves institution ownership on the server. Super Admins must
+select an active institution before the form is shown; Institution Admins and
+authorized Staff are restricted to the active institution assigned to their
+authenticated database account. Staff must have `parents.create` (or the
+existing system-role permission fallback). The submitted institution is
+revalidated, parent accounts always use the canonical system Parent role, and
+student links are checked against the selected institution inside the creation
+transaction.
+
+Run the integration test only against a disposable database initialized from
+the current schema and seed:
+
+```text
+FEES_PARENT_CREATION_TEST_DB=fees_parent_creation_verify_YYYYMMDD_HHMMSS php tests/parent_creation_test.php
+```
+
 ## Attendance management
 
 Admins with academic-management permission can mark attendance at

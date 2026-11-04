@@ -45,23 +45,102 @@ foreach (['name', 'code', 'course_id', 'class_id', 'start_time', 'end_time', 'ca
         : (string) ($batch[$field] ?? ($field === 'status' ? 'active' : ''));
 }
 $title = $adminBatchId === null ? 'Create Batch' : 'Edit Batch';
-render_app_page_start($title, 'Maintain batch details within this institution.', 'admin', ['admin-dashboard.css']);
+render_app_page_start(
+    $title,
+    $adminBatchId === null
+        ? 'Set up a batch and connect it with its course and class.'
+        : 'Update the batch details and scheduling for this institution.',
+    'admin',
+    ['admin-dashboard.css', 'admin-batch-form.css']
+);
 ?>
 <?php echo render_flash_messages(); ?>
-<nav aria-label="Breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="<?php echo e(route_url('/admin/dashboard')); ?>">Dashboard</a></li><li class="breadcrumb-item"><a href="<?php echo e(route_url('/admin/batches/index')); ?>">Batches</a></li><li class="breadcrumb-item active" aria-current="page"><?php echo e($title); ?></li></ol></nav>
-<?php foreach ($errors as $error): ?><div class="alert alert-danger" role="alert"><?php echo e($error); ?></div><?php endforeach; ?>
-<section class="dashboard-panel admin-form-panel">
-    <form method="post" action="<?php echo e(route_url($adminBatchId === null ? '/admin/batches/create' : '/admin/batches/edit') . ($adminBatchId === null ? '' : '?id=' . $adminBatchId)); ?>" class="admin-form-grid">
+<nav class="batch-form-breadcrumb" aria-label="Breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="<?php echo e(route_url('/admin/dashboard')); ?>">Dashboard</a></li>
+        <li class="breadcrumb-item"><a href="<?php echo e(route_url('/admin/batches/index')); ?>">Batches</a></li>
+        <li class="breadcrumb-item active" aria-current="page"><?php echo e($title); ?></li>
+    </ol>
+</nav>
+<?php foreach ($errors as $error): ?><div class="alert alert-danger batch-form-error" role="alert"><?php echo e($error); ?></div><?php endforeach; ?>
+<section class="batch-form-card">
+    <header class="batch-form-header">
+        <span class="batch-form-icon" aria-hidden="true"><i class="bi bi-people"></i></span>
+        <div>
+            <span class="batch-form-eyebrow"><?php echo $adminBatchId === null ? 'Batch setup' : 'Batch details'; ?></span>
+            <h2><?php echo $adminBatchId === null ? 'Create a new batch' : 'Edit batch details'; ?></h2>
+            <p>Organize learners into a course and class, then add the schedule and capacity.</p>
+        </div>
+    </header>
+    <form method="post" action="<?php echo e(route_url($adminBatchId === null ? '/admin/batches/create' : '/admin/batches/edit') . ($adminBatchId === null ? '' : '?id=' . $adminBatchId)); ?>" class="batch-form">
         <?php echo csrf_field(); ?>
-        <label class="admin-form-field">Batch name<input class="form-control" name="name" maxlength="120" required value="<?php echo e($formValues['name']); ?>"></label>
-        <label class="admin-form-field">Batch code<input class="form-control" name="code" maxlength="50" value="<?php echo e($formValues['code']); ?>"></label>
-        <label class="admin-form-field">Course<select class="form-select" name="course_id" required><option value="">Select course</option><?php foreach ($courses as $courseOption): ?><option value="<?php echo e((string) $courseOption['id']); ?>"<?php echo $formValues['course_id'] === (string) $courseOption['id'] ? ' selected' : ''; ?>><?php echo e((string) $courseOption['name']); ?></option><?php endforeach; ?></select></label>
-        <label class="admin-form-field">Class<select class="form-select" name="class_id" required><option value="">Select class</option><?php foreach ($classes as $classOption): ?><option value="<?php echo e((string) $classOption['id']); ?>"<?php echo $formValues['class_id'] === (string) $classOption['id'] ? ' selected' : ''; ?>><?php echo e((string) $classOption['name']); ?></option><?php endforeach; ?></select></label>
-        <label class="admin-form-field">Starts at<input class="form-control" type="time" name="start_time" value="<?php echo e(substr($formValues['start_time'], 0, 5)); ?>"></label>
-        <label class="admin-form-field">Ends at<input class="form-control" type="time" name="end_time" value="<?php echo e(substr($formValues['end_time'], 0, 5)); ?>"></label>
-        <label class="admin-form-field">Capacity<input class="form-control" type="number" min="1" max="1000000" name="capacity" value="<?php echo e($formValues['capacity']); ?>"></label>
-        <label class="admin-form-field">Status<select class="form-select" name="status"><?php foreach (['active', 'inactive', 'full'] as $status): ?><option value="<?php echo e($status); ?>"<?php echo $formValues['status'] === $status ? ' selected' : ''; ?>><?php echo e(ucfirst($status)); ?></option><?php endforeach; ?></select></label>
-        <div class="admin-form-actions"><button class="btn btn-cobalt" type="submit"><?php echo e($adminBatchId === null ? 'Create batch' : 'Save batch'); ?></button><a class="btn btn-outline-secondary" href="<?php echo e(route_url('/admin/batches/index')); ?>">Cancel</a></div>
+        <div class="batch-form-section-heading">
+            <span aria-hidden="true"><i class="bi bi-journal-bookmark"></i></span>
+            <div>
+                <h3>Batch information</h3>
+                <p>Choose a name and assign the batch to an existing course and class.</p>
+            </div>
+        </div>
+        <label class="batch-form-field">
+            <span>Batch name <b aria-hidden="true">*</b></span>
+            <input class="form-control" name="name" maxlength="120" required value="<?php echo e($formValues['name']); ?>" placeholder="e.g. Morning batch">
+        </label>
+        <label class="batch-form-field">
+            <span>Batch code <small>Optional</small></span>
+            <input class="form-control" name="code" maxlength="50" value="<?php echo e($formValues['code']); ?>" placeholder="e.g. MTH-01">
+        </label>
+        <label class="batch-form-field">
+            <span>Course <b aria-hidden="true">*</b></span>
+            <select class="form-select" name="course_id" required>
+                <option value="">Select a course</option>
+                <?php foreach ($courses as $courseOption): ?>
+                    <option value="<?php echo e((string) $courseOption['id']); ?>"<?php echo $formValues['course_id'] === (string) $courseOption['id'] ? ' selected' : ''; ?>><?php echo e((string) $courseOption['name']); ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
+        <label class="batch-form-field">
+            <span>Class <b aria-hidden="true">*</b></span>
+            <select class="form-select" name="class_id" required>
+                <option value="">Select a class</option>
+                <?php foreach ($classes as $classOption): ?>
+                    <option value="<?php echo e((string) $classOption['id']); ?>"<?php echo $formValues['class_id'] === (string) $classOption['id'] ? ' selected' : ''; ?>><?php echo e((string) $classOption['name']); ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
+        <div class="batch-form-section-heading batch-form-section-spaced">
+            <span aria-hidden="true"><i class="bi bi-clock-history"></i></span>
+            <div>
+                <h3>Schedule and availability</h3>
+                <p>Set the usual meeting times, maximum capacity, and current status.</p>
+            </div>
+        </div>
+        <label class="batch-form-field">
+            <span>Starts at <small>Optional</small></span>
+            <input class="form-control" type="time" name="start_time" value="<?php echo e(substr($formValues['start_time'], 0, 5)); ?>">
+        </label>
+        <label class="batch-form-field">
+            <span>Ends at <small>Optional</small></span>
+            <input class="form-control" type="time" name="end_time" value="<?php echo e(substr($formValues['end_time'], 0, 5)); ?>">
+        </label>
+        <label class="batch-form-field">
+            <span>Capacity <small>Optional</small></span>
+            <input class="form-control" type="number" min="1" max="1000000" name="capacity" value="<?php echo e($formValues['capacity']); ?>" placeholder="Set a learner limit">
+        </label>
+        <label class="batch-form-field">
+            <span>Status</span>
+            <select class="form-select" name="status">
+                <?php foreach (['active', 'inactive', 'full'] as $status): ?>
+                    <option value="<?php echo e($status); ?>"<?php echo $formValues['status'] === $status ? ' selected' : ''; ?>><?php echo e(ucfirst($status)); ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
+        <footer class="batch-form-footer">
+            <a class="batch-form-cancel" href="<?php echo e(route_url('/admin/batches/index')); ?>"><i class="bi bi-arrow-left" aria-hidden="true"></i> Back to batches</a>
+            <button class="btn btn-cobalt batch-form-submit" type="submit">
+                <i class="bi bi-check2" aria-hidden="true"></i>
+                <?php echo e($adminBatchId === null ? 'Create batch' : 'Save changes'); ?>
+            </button>
+        </footer>
     </form>
 </section>
 <?php render_app_page_end('admin'); ?>

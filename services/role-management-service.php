@@ -330,8 +330,8 @@ function rbac_set_role_active(
             throw new InvalidArgumentException('System roles cannot be deactivated.');
         }
         if (!$active) {
-            $statement = $db->prepare('SELECT COUNT(*) FROM users WHERE role_id = ?');
-            $statement->bind_param('i', $roleId);
+            $statement = $db->prepare('SELECT COUNT(*) FROM users WHERE role_id = ? AND institution_id = ?');
+            $statement->bind_param('ii', $roleId, $institutionId);
             $statement->execute();
             $assignedUsers = (int) $statement->get_result()->fetch_row()[0];
             $statement->close();
@@ -377,8 +377,8 @@ function rbac_delete_role(mysqli $db, int $institutionId, int $actorUserId, int 
         if ($role === null || (int) $role['is_system'] === 1) {
             throw new InvalidArgumentException('System roles cannot be deleted.');
         }
-        $statement = $db->prepare('SELECT COUNT(*) FROM users WHERE role_id = ?');
-        $statement->bind_param('i', $roleId);
+        $statement = $db->prepare('SELECT COUNT(*) FROM users WHERE role_id = ? AND institution_id = ?');
+        $statement->bind_param('ii', $roleId, $institutionId);
         $statement->execute();
         $assignedUsers = (int) $statement->get_result()->fetch_row()[0];
         $statement->close();

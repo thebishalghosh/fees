@@ -10,7 +10,23 @@ require_placeholder_route_access();
 require_valid_csrf_token();
 
 $user = current_user();
-$institutionId = parent_management_institution_id();
+$db = db_connect();
+if ($user === null || !user_has_compatible_permission('parents.create', 'parents.manage')) {
+    http_response_code(403);
+    exit('Forbidden.');
+}
+try {
+    $institutionId = parent_management_resolve_create_institution(
+        $db,
+        $user,
+        $_POST['institution_id'] ?? null
+    );
+} catch (Throwable $exception) {
+    $_SESSION['parent_management_old'] = parent_management_old_form_values($_POST, 'create');
+    parent_management_handle_failure($exception, 'create');
+    safe_redirect(route_url('/admin/parents/create'));
+}
+
 $profileResult = parent_management_validate_profile($_POST);
 $initialStatus = !array_key_exists('initial_status', $_POST)
     ? 'pending_verification'
@@ -31,9 +47,7 @@ if ($errors !== []) {
     set_flash('danger', implode(' ', $errors));
     safe_redirect(route_url('/admin/parents/create'));
 }
-
 try {
-    $db = db_connect();
     $parentId = parent_management_create(
         $db,
         $institutionId,
