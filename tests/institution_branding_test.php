@@ -119,7 +119,7 @@ $check(
         && str_contains($service, "institution_id = ? AND setting_key IN")
         && str_contains($service, 'ON DUPLICATE KEY UPDATE')
         && str_contains($service, "'institution.branding_updated'")
-        && str_contains($service, "authenticated_institution_id(['admin', 'staff', 'parent'])")
+        && str_contains($service, "authenticated_institution_id(['super_admin', 'admin', 'staff', 'parent'])")
         && str_contains($service, "WHERE code = ? AND status = 'active'"),
     'Store settings per institution, audit writes, and resolve login branding by code'
 );

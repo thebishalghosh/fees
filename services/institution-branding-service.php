@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/audit-service.php';
+
 const INSTITUTION_LOGO_MAX_BYTES = 2097152;
 const INSTITUTION_LOGO_MAX_DIMENSION = 4000;
 const INSTITUTION_LOGO_MAX_PIXELS = 10000000;
@@ -274,7 +276,7 @@ function institution_branding_get(mysqli $db, int $institutionId): ?array
 
 function institution_branding_get_for_current_user(?mysqli $db = null): ?array
 {
-    $institutionId = authenticated_institution_id(['admin', 'staff', 'parent']);
+    $institutionId = authenticated_institution_id(['super_admin', 'admin', 'staff', 'parent']);
     if ($institutionId === null) {
         return null;
     }
@@ -346,7 +348,7 @@ function institution_branding_save(mysqli $db, int $institutionId, array $input)
              VALUES (?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_by = VALUES(updated_by)'
         );
-        $actorId = (int) $actor['id'];
+        $actorId = institution_audit_actor_user_id((int) $actor['id']);
         foreach ($values as $key => $value) {
             $statement->bind_param('issi', $institutionId, $key, $value, $actorId);
             $statement->execute();

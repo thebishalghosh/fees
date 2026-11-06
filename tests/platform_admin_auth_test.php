@@ -235,6 +235,11 @@ $check(
     array_intersect(platform_admin_bootstrap_permission_grants(), ['institutions.view', 'institution_support.read']) === [],
     'Do not grant institution-data access during bootstrap'
 );
+$check(
+    in_array('institutions.admin', platform_admin_permission_catalog(), true)
+        && !in_array('institutions.admin', platform_admin_bootstrap_permission_grants(), true),
+    'Keep full institution-admin access as an explicit platform permission'
+);
 $_SESSION['platform_admin'] = [
     'id' => 7,
     'name' => 'Platform Admin',
@@ -310,6 +315,33 @@ $check(
     'Reject a merged legacy session at the institution validator'
 );
 $_SESSION = [];
+$originalSession = $_SESSION;
+$_SESSION = [
+    'platform_admin' => [
+        'id' => 17,
+        'name' => 'Platform Operator',
+        'email' => 'platform@example.invalid',
+        'status' => 'active',
+        'permissions' => ['institutions.admin'],
+    ],
+    'platform_admin_selected_institution_id' => 42,
+];
+$platformAdminContext = current_user();
+$platformContextIsSeparate = is_array($platformAdminContext)
+    && $platformAdminContext['identity_type'] === 'platform_admin'
+    && $platformAdminContext['user_type'] === 'super_admin'
+    && $platformAdminContext['id'] === 0
+    && $platformAdminContext['institution_id'] === 42
+    && !isset($_SESSION['user'])
+    && admin_selected_institution_id() === 42
+    && user_has_permission('fees.delete')
+    && user_can_access_institution(42)
+    && !user_can_access_institution(43);
+$_SESSION = $originalSession;
+$check(
+    $platformContextIsSeparate,
+    'Provide selected-institution compatibility context without creating an institution user session'
+);
 
 $csrfToken = csrf_token();
 $check(verify_csrf_token($csrfToken), 'Accept a valid platform logout CSRF token');
@@ -341,6 +373,12 @@ $otpAuthSource = file_get_contents(__DIR__ . '/../services/otp-service.php');
 $loginEndpointSource = file_get_contents(__DIR__ . '/../auth/platform-admin-login.php');
 $logoutEndpointSource = file_get_contents(__DIR__ . '/../auth/platform-admin-logout.php');
 $bootstrapEndpointSource = file_get_contents(__DIR__ . '/../auth/platform-admin-bootstrap.php');
+$platformDashboardSource = file_get_contents(__DIR__ . '/../platform-admin/dashboard.php');
+$appScriptSource = file_get_contents(__DIR__ . '/../public/assets/js/app.js');
+$authSource = file_get_contents(__DIR__ . '/../includes/auth.php');
+$sidebarSource = file_get_contents(__DIR__ . '/../includes/layouts/sidebar.php');
+$auditServiceSource = file_get_contents(__DIR__ . '/../services/audit-service.php');
+$sharedPageSource = file_get_contents(__DIR__ . '/../includes/layouts/page.php');
 $check(
     is_string($adminAuthSource) && str_contains($adminAuthSource, 'prepare_identity_session($db, \'institution_user\')'),
     'Apply identity isolation to institution password authentication'
@@ -355,6 +393,56 @@ $check(
         && str_contains($loginEndpointSource, 'http_response_code(429)')
         && str_contains($loginEndpointSource, "header('Retry-After: 900')"),
     'Return a temporary generic response when platform login is throttled'
+);
+$check(
+    is_string($loginEndpointSource)
+        && str_contains($loginEndpointSource, "safe_redirect('/platform-admin/dashboard')"),
+    'Redirect successful platform logins to their own workspace'
+);
+$check(
+    is_string($platformDashboardSource)
+        && str_contains($platformDashboardSource, 'require_platform_admin()')
+        && str_contains($platformDashboardSource, 'render_app_page_start(')
+        && str_contains($platformDashboardSource, 'institution_onboarding_list(')
+        && str_contains($platformDashboardSource, 'Open workspace')
+        && str_contains($platformDashboardSource, "institutions.create")
+        && str_contains($platformDashboardSource, "institutions.update")
+        && str_contains($platformDashboardSource, "institutions.suspend"),
+    'Render the institution manager inside the shared Platform Admin workspace'
+);
+$check(
+    is_string($platformDashboardSource)
+        && str_contains($platformDashboardSource, '($_GET[\'select_institution\'] ?? null) === \'1\'')
+        && str_contains($platformDashboardSource, 'data-auto-show-toast')
+        && str_contains($platformDashboardSource, 'Select an institution to open its admin workspace.')
+        && is_string($appScriptSource)
+        && str_contains($appScriptSource, "querySelectorAll('[data-auto-show-toast]')")
+        && str_contains($appScriptSource, 'window.bootstrap.Toast.getOrCreateInstance(toastElement).show()'),
+    'Show a toast when Platform Admin is redirected to select an institution'
+);
+$check(
+    is_string($sidebarSource)
+        && str_contains($sidebarSource, 'current_platform_admin() !== null')
+        && str_contains($sidebarSource, "'/platform-admin/dashboard'")
+        && is_string($sharedPageSource)
+        && str_contains($sharedPageSource, 'Platform administrator workspace')
+        && str_contains($sharedPageSource, 'full access to its admin workspace')
+        && str_contains($sharedPageSource, 'app-page-platform-admin'),
+    'Expose the shared institution admin navigation and selector to Platform Admin'
+);
+$check(
+    is_string($auditServiceSource)
+        && str_contains($auditServiceSource, 'platform.institution_admin.')
+        && str_contains($auditServiceSource, 'platform_admin_selected_institution_id()')
+        && str_contains($auditServiceSource, 'institution_audit_actor_user_id'),
+    'Keep institution actions scoped and audit them as Platform Admin, not as a user row'
+);
+$check(
+    is_string($authSource)
+        && str_contains($authSource, 'platform_admin_select_institution(db_connect(), $_GET[\'institution_id\'])')
+        && str_contains($authSource, "status <> 'archived'")
+        && str_contains($authSource, 'platform_admin_selected_institution_id'),
+    'Validate the selected tenant for Platform Admin routes and keep selection in its separate session'
 );
 $check(
     is_string($logoutEndpointSource)

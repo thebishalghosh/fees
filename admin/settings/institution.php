@@ -13,7 +13,8 @@ $institutionId = admin_panel_institution_id();
 $user = current_user();
 $errors = [];
 $institution = admin_panel_institution($db, $institutionId);
-$canManageBranding = ($user['user_type'] ?? null) === 'admin';
+$canManageBranding = ($user['user_type'] ?? null) === 'admin'
+    || ($user['identity_type'] ?? null) === 'platform_admin';
 if ($institution === null) {
     http_response_code(404);
     exit('Institution not found.');

@@ -146,7 +146,9 @@ function admission_conversion_set_status(
              WHERE institution_id = ? AND id = ?'
         );
         $approvedAt = $status === 'approved' ? date('Y-m-d H:i:s') : null;
-        $approvedBy = $status === 'approved' ? $actorUserId : null;
+        $approvedBy = $status === 'approved'
+            ? institution_audit_actor_user_id($actorUserId)
+            : null;
         $statement->bind_param('ssisii', $status, $reviewNotes, $approvedBy, $approvedAt, $institutionId, $admissionId);
         $statement->execute();
         $statement->close();
@@ -179,7 +181,11 @@ function admission_conversion_convert(
     string $studentCode,
     ?string $admissionNumber
 ): array {
-    if ($institutionId < 1 || $actorUserId < 1 || $admissionId < 1 || $yearId < 1 || $groupId < 1) {
+    if ($institutionId < 1
+        || ($actorUserId < 1 && current_platform_admin() === null)
+        || $admissionId < 1
+        || $yearId < 1
+        || $groupId < 1) {
         throw new InvalidArgumentException('Select a valid admission, active academic year, and placement.');
     }
     $admissionNumber = $admissionNumber === null || trim($admissionNumber) === ''
@@ -379,6 +385,7 @@ function admission_conversion_convert(
              WHERE institution_id = ? AND id = ? AND status = \'approved\'
                AND student_enrolment_id IS NULL'
         );
+        $convertedBy = institution_audit_actor_user_id($actorUserId);
         $statement->bind_param(
             'iiiiiiiiisii',
             $studentId,
@@ -389,7 +396,7 @@ function admission_conversion_convert(
             $groupId,
             $enrolmentId,
             $placementId,
-            $actorUserId,
+            $convertedBy,
             $newStatus,
             $institutionId,
             $admissionId

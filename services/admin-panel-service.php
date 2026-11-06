@@ -584,6 +584,59 @@ function admin_panel_audit_logs(mysqli $db, int $institutionId, string $search =
     $limit = min(max($limit, 1), 500);
     $search = trim($search);
     $pattern = '%' . strtr($search, ['!' => '!!', '%' => '!%', '_' => '!_']) . '%';
+    if (current_platform_admin() !== null) {
+        if (!institution_platform_actor_matches($institutionId)) {
+            throw new RuntimeException('Platform audit access must match the selected institution.');
+        }
+        $statement = $db->prepare(
+            'SELECT * FROM (
+                SELECT al.id,
+                       CONVERT(al.action USING utf8mb4) COLLATE utf8mb4_unicode_ci AS action,
+                       CONVERT(al.entity_type USING utf8mb4) COLLATE utf8mb4_unicode_ci AS entity_type,
+                       CONVERT(al.entity_id USING utf8mb4) COLLATE utf8mb4_unicode_ci AS entity_id,
+                       CONVERT(al.actor_type USING utf8mb4) COLLATE utf8mb4_unicode_ci AS actor_type,
+                       CONVERT(al.ip_address USING utf8mb4) COLLATE utf8mb4_unicode_ci AS ip_address,
+                       al.created_at,
+                       CONVERT(u.full_name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS actor_name
+                FROM audit_logs al
+                LEFT JOIN users u ON u.id = al.actor_user_id AND u.institution_id = al.institution_id
+                WHERE al.institution_id = ?
+                UNION ALL
+                SELECT pal.id,
+                       CONVERT(pal.action USING utf8mb4) COLLATE utf8mb4_unicode_ci AS action,
+                       CONVERT(pal.target_type USING utf8mb4) COLLATE utf8mb4_unicode_ci AS entity_type,
+                       CONVERT(CAST(pal.target_id AS CHAR CHARACTER SET utf8mb4) USING utf8mb4)
+                           COLLATE utf8mb4_unicode_ci AS entity_id,
+                       _utf8mb4\'platform_admin\' COLLATE utf8mb4_unicode_ci AS actor_type,
+                       CONVERT(pal.ip_address USING utf8mb4) COLLATE utf8mb4_unicode_ci AS ip_address,
+                       pal.created_at,
+                       CONVERT(pa.name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS actor_name
+                FROM platform_audit_logs pal
+                LEFT JOIN platform_admins pa ON pa.id = pal.actor_platform_admin_id
+                WHERE pal.target_institution_id = ?
+             ) activity
+             WHERE (? = \'\' OR activity.action LIKE ? ESCAPE \'!\' OR activity.entity_type LIKE ? ESCAPE \'!\'
+                    OR activity.entity_id LIKE ? ESCAPE \'!\' OR activity.actor_name LIKE ? ESCAPE \'!\')
+             ORDER BY activity.created_at DESC, activity.id DESC
+             LIMIT ?'
+        );
+        $statement->bind_param(
+            'iisssssi',
+            $institutionId,
+            $institutionId,
+            $search,
+            $pattern,
+            $pattern,
+            $pattern,
+            $pattern,
+            $limit
+        );
+        $statement->execute();
+        $rows = $statement->get_result()->fetch_all(MYSQLI_ASSOC);
+        $statement->close();
+        return $rows;
+    }
+
     $statement = $db->prepare(
         'SELECT al.id, al.action, al.entity_type, al.entity_id, al.actor_type,
                 al.ip_address, al.created_at, u.full_name AS actor_name
@@ -957,6 +1010,7 @@ function admin_panel_save_announcement(
     $db->begin_transaction();
     try {
         if ($announcementId === null) {
+            $createdBy = institution_audit_actor_user_id($actorUserId);
             $statement = $db->prepare(
                 'INSERT INTO announcements
                     (institution_id, created_by, title, message, publish_at, expires_at, status)
@@ -965,7 +1019,7 @@ function admin_panel_save_announcement(
             $statement->bind_param(
                 'iisssss',
                 $institutionId,
-                $actorUserId,
+                $createdBy,
                 $title,
                 $message,
                 $publishDateTime,

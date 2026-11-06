@@ -30,8 +30,8 @@ try {
     exit('Too many login attempts. Try again later.');
 }
 if ($login === null) {
-    set_flash('error', 'Invalid platform administrator credentials.');
-    safe_redirect('/');
+    set_flash('danger', 'Invalid platform administrator credentials.', 'platform_admin_auth');
+    safe_redirect('/platform-admin/login', 303);
 }
 
-safe_redirect('/');
+safe_redirect('/platform-admin/dashboard');

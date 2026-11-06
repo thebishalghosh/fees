@@ -6,6 +6,23 @@ require_once __DIR__ . '/functions.php';
 function current_user(): ?array
 {
     $user = $_SESSION['user'] ?? null;
+    if (!is_array($user)) {
+        $platformAdmin = current_platform_admin();
+        $institutionId = platform_admin_selected_institution_id();
+        if ($platformAdmin !== null && $institutionId !== null) {
+            // Legacy admin handlers need tenant context, but platform IDs must never resolve to a users row.
+            return [
+                'id' => 0,
+                'institution_id' => $institutionId,
+                'user_type' => 'super_admin',
+                'role_is_system' => true,
+                'full_name' => (string) $platformAdmin['name'],
+                'status' => 'active',
+                'permissions' => [],
+                'identity_type' => 'platform_admin',
+            ];
+        }
+    }
     if (!is_array($user)
         || !isset($user['id'], $user['institution_id'], $user['user_type'], $user['status'])
         || filter_var($user['id'], FILTER_VALIDATE_INT) === false
@@ -29,7 +46,10 @@ function admin_selected_institution_id(): ?int
         return null;
     }
 
-    $institutionId = filter_var($_SESSION['admin_selected_institution_id'] ?? null, FILTER_VALIDATE_INT);
+    $sessionKey = ($user['identity_type'] ?? null) === 'platform_admin'
+        ? 'platform_admin_selected_institution_id'
+        : 'admin_selected_institution_id';
+    $institutionId = filter_var($_SESSION[$sessionKey] ?? null, FILTER_VALIDATE_INT);
     return $institutionId !== false && $institutionId !== null && $institutionId > 0
         ? (int) $institutionId
         : null;
@@ -53,6 +73,10 @@ function authenticated_institution_id(array $allowedUserTypes): ?int
         return null;
     }
 
+    if (($user['identity_type'] ?? null) === 'platform_admin') {
+        return admin_selected_institution_id();
+    }
+
     return $user['user_type'] === 'super_admin'
         ? admin_selected_institution_id()
         : (int) $user['institution_id'];
@@ -60,12 +84,21 @@ function authenticated_institution_id(array $allowedUserTypes): ?int
 
 function is_authenticated(): bool
 {
+    if (current_platform_admin() !== null
+        && isset($_SESSION['platform_admin_session_id'], $_SESSION['platform_admin_session_token'])) {
+        return platform_admin_revalidate_session();
+    }
+
     return current_user() !== null
         && isset($_SESSION['auth_session']['identifier'], $_SESSION['auth_session']['token_hash']);
 }
 
 function authenticated_dashboard_route(): string
 {
+    if (current_platform_admin() !== null) {
+        return '/platform-admin/dashboard';
+    }
+
     $user = current_user();
     if ($user === null) {
         throw new RuntimeException('An authenticated user is required to select a dashboard.');
@@ -212,6 +245,21 @@ function authenticated_role_is_valid(
 
 function require_login(): void
 {
+    if (current_platform_admin() !== null) {
+        try {
+            if (platform_admin_revalidate_session()) {
+                return;
+            }
+        } catch (Throwable $exception) {
+            log_error('platform_admin_session_validation_failed', [
+                'error_type' => get_class($exception),
+                'error_code' => $exception->getCode(),
+            ]);
+        }
+        http_response_code(401);
+        exit('Platform admin authentication required.');
+    }
+
     $valid = false;
     try {
         $valid = revalidate_authenticated_session();
@@ -252,6 +300,9 @@ function user_has_permission(string $permission): bool
     if ($user === null || !is_array($permissions)) {
         return false;
     }
+    if (($user['identity_type'] ?? null) === 'platform_admin') {
+        return platform_admin_session_has_permission('institutions.admin');
+    }
     if ($user['user_type'] === 'super_admin') {
         return true;
     }
@@ -270,6 +321,11 @@ function user_can_access_institution(int $institutionId): bool
     $user = current_user();
     if ($institutionId < 1 || $user === null) {
         return false;
+    }
+
+    if (($user['identity_type'] ?? null) === 'platform_admin') {
+        return platform_admin_session_has_permission('institutions.admin')
+            && admin_selected_institution_id() === $institutionId;
     }
 
     return $user['user_type'] === 'super_admin'
@@ -362,7 +418,12 @@ function require_user_types(array $allowedTypes): void
         }
     }
 
-    if ($user === null || !in_array($user['user_type'], $allowedTypes, true)) {
+    $platformAdminAllowed = current_platform_admin() !== null
+        && platform_admin_selected_institution_id() !== null
+        && platform_admin_session_has_permission('institutions.admin')
+        && array_intersect($allowedTypes, ['super_admin', 'admin', 'staff']) !== [];
+    if (!$platformAdminAllowed
+        && ($user === null || !in_array($user['user_type'], $allowedTypes, true))) {
         http_response_code(403);
         exit('Forbidden.');
     }
@@ -429,23 +490,46 @@ function require_placeholder_route_access(): void
     }
 
     require_login();
+    if (current_platform_admin() !== null) {
+        if (array_key_exists('institution_id', $_GET)) {
+            try {
+                platform_admin_select_institution(db_connect(), $_GET['institution_id']);
+            } catch (InvalidArgumentException $exception) {
+                http_response_code(400);
+                exit(e($exception->getMessage()));
+            } catch (OutOfBoundsException $exception) {
+                http_response_code(404);
+                exit(e($exception->getMessage()));
+            }
+        }
+        if (platform_admin_selected_institution_id() === null) {
+            safe_redirect('/platform-admin/dashboard?select_institution=1', 303);
+        }
+    }
     $user = current_user();
     if ($user === null || !in_array($user['user_type'], ['super_admin', 'admin', 'staff'], true)) {
         http_response_code(403);
         exit('Forbidden.');
     }
     $relativePath = substr($scriptPath, strlen('/admin/'));
+    $isPlatformAdmin = ($user['identity_type'] ?? null) === 'platform_admin';
     if ($user['user_type'] === 'super_admin') {
         $requestData = $_SERVER['REQUEST_METHOD'] === 'POST' ? $_POST : $_GET;
         $requestHasInstitution = array_key_exists('institution_id', $requestData);
+        if ($isPlatformAdmin && $_SERVER['REQUEST_METHOD'] !== 'GET') {
+            $requestHasInstitution = false;
+        }
         $requestedInstitution = $requestData['institution_id'] ?? null;
         if ($requestHasInstitution) {
+            $selectionKey = $isPlatformAdmin
+                ? 'platform_admin_selected_institution_id'
+                : 'admin_selected_institution_id';
             if ($requestedInstitution === null || $requestedInstitution === '') {
-                unset($_SESSION['admin_selected_institution_id']);
+                unset($_SESSION[$selectionKey]);
             } else {
                 $requestedId = filter_var($requestedInstitution, FILTER_VALIDATE_INT);
                 if ($requestedId === false || $requestedId < 1) {
-                    unset($_SESSION['admin_selected_institution_id']);
+                    unset($_SESSION[$selectionKey]);
                     http_response_code(400);
                     exit('Choose a valid institution.');
                 }
@@ -458,11 +542,11 @@ function require_placeholder_route_access(): void
                 $availableInstitutionId = $statement->get_result()->fetch_column();
                 $statement->close();
                 if ($availableInstitutionId === false) {
-                    unset($_SESSION['admin_selected_institution_id']);
+                    unset($_SESSION[$selectionKey]);
                     http_response_code(404);
                     exit('The selected institution is unavailable.');
                 }
-                $_SESSION['admin_selected_institution_id'] = (int) $availableInstitutionId;
+                $_SESSION[$selectionKey] = (int) $availableInstitutionId;
             }
         } elseif (admin_selected_institution_id() !== null) {
             $selectedId = admin_selected_institution_id();
@@ -475,12 +559,19 @@ function require_placeholder_route_access(): void
             $stillAvailable = $statement->get_result()->fetch_column();
             $statement->close();
             if ($stillAvailable === false) {
-                unset($_SESSION['admin_selected_institution_id']);
+                unset($_SESSION[$isPlatformAdmin
+                    ? 'platform_admin_selected_institution_id'
+                    : 'admin_selected_institution_id']);
             }
         }
         if (admin_selected_institution_id() === null
             && !in_array($relativePath, ['dashboard.php', 'index.php'], true)) {
-            safe_redirect('/admin/dashboard?select_institution=1', 303);
+            safe_redirect(
+                $isPlatformAdmin
+                    ? '/platform-admin/dashboard?select_institution=1'
+                    : '/admin/dashboard?select_institution=1',
+                303
+            );
         }
     }
     $section = explode('/', $relativePath)[0] ?? '';
@@ -759,6 +850,7 @@ function platform_admin_permission_catalog(): array
         'institutions.create',
         'institutions.update',
         'institutions.suspend',
+        'institutions.admin',
         'platform_admins.manage',
         'platform_permissions.manage',
         'platform_audit.view',
@@ -787,6 +879,48 @@ function current_platform_admin(): ?array
     }
 
     return $admin;
+}
+
+function platform_admin_selected_institution_id(): ?int
+{
+    if (current_platform_admin() === null) {
+        return null;
+    }
+
+    $institutionId = filter_var(
+        $_SESSION['platform_admin_selected_institution_id'] ?? null,
+        FILTER_VALIDATE_INT
+    );
+    return $institutionId !== false && $institutionId !== null && $institutionId > 0
+        ? (int) $institutionId
+        : null;
+}
+
+function platform_admin_select_institution(mysqli $db, mixed $institutionId): ?int
+{
+    if ($institutionId === null || $institutionId === '') {
+        unset($_SESSION['platform_admin_selected_institution_id']);
+        return null;
+    }
+    $validatedId = filter_var($institutionId, FILTER_VALIDATE_INT);
+    if ($validatedId === false || $validatedId === null || $validatedId < 1) {
+        throw new InvalidArgumentException('Choose a valid institution.');
+    }
+
+    $statement = $db->prepare(
+        "SELECT id FROM institutions WHERE id = ? AND status <> 'archived' LIMIT 1"
+    );
+    $statement->bind_param('i', $validatedId);
+    $statement->execute();
+    $availableId = $statement->get_result()->fetch_column();
+    $statement->close();
+    if ($availableId === false) {
+        unset($_SESSION['platform_admin_selected_institution_id']);
+        throw new OutOfBoundsException('The selected institution is unavailable.');
+    }
+
+    $_SESSION['platform_admin_selected_institution_id'] = (int) $availableId;
+    return (int) $availableId;
 }
 
 function platform_admin_has_permission(string $permission, ?mysqli $db = null): bool

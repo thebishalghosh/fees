@@ -286,7 +286,11 @@ function fee_workflow_create_assignment(
     int $structureId,
     int $planId
 ): int {
-    if ($institutionId < 1 || $actorUserId < 1 || $studentId < 1 || $structureId < 1 || $planId < 1) {
+    if ($institutionId < 1
+        || ($actorUserId < 1 && !institution_platform_actor_matches($institutionId))
+        || $studentId < 1
+        || $structureId < 1
+        || $planId < 1) {
         throw new InvalidArgumentException('Select a student, fee structure, and payment plan.');
     }
 
@@ -396,7 +400,11 @@ function fee_workflow_create_enrolment_assignment(
     int $structureId,
     int $planId
 ): int {
-    if ($institutionId < 1 || $actorUserId < 1 || $enrolmentId < 1 || $structureId < 1 || $planId < 1) {
+    if ($institutionId < 1
+        || ($actorUserId < 1 && !institution_platform_actor_matches($institutionId))
+        || $enrolmentId < 1
+        || $structureId < 1
+        || $planId < 1) {
         throw new InvalidArgumentException('Select an active enrolment, applicable fee structure, and payment plan.');
     }
 
@@ -792,7 +800,9 @@ function fee_workflow_generate_installments(
     int $assignmentId,
     string $firstDueDate
 ): array {
-    if ($institutionId < 1 || $actorUserId < 1 || $assignmentId < 1) {
+    if ($institutionId < 1
+        || ($actorUserId < 1 && !institution_platform_actor_matches($institutionId))
+        || $assignmentId < 1) {
         throw new InvalidArgumentException('The fee assignment is invalid.');
     }
     if (!fee_workflow_valid_date($firstDueDate)) {

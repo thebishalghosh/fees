@@ -511,6 +511,10 @@
     margin-top: 3rem;
 }
 
+.app-page-platform-admin > .site-footer-app {
+    display: none;
+}
+
 @media (max-width: 560px) {
     .admin-institution-context form {
         grid-template-columns: minmax(0, 1fr);

@@ -85,6 +85,26 @@ function parent_management_get_active_institutions(mysqli $db): array
 
 function parent_management_create_actor_record(mysqli $db, int $actorUserId, string $actorType): array
 {
+    $currentUser = current_user();
+    if ($actorUserId === 0
+        && $actorType === 'super_admin'
+        && is_array($currentUser)
+        && ($currentUser['identity_type'] ?? null) === 'platform_admin'
+        && institution_platform_actor_matches((int) $currentUser['institution_id'])) {
+        return [
+            'id' => 0,
+            'institution_id' => (int) $currentUser['institution_id'],
+            'user_type' => 'super_admin',
+            'status' => 'active',
+            'role_id' => 0,
+            'role_name' => 'super_admin',
+            'role_is_system' => 1,
+            'role_institution_id' => null,
+            'role_is_active' => 1,
+            'institution_status' => 'active',
+        ];
+    }
+
     if ($actorUserId < 1 || !in_array($actorType, ['super_admin', 'admin', 'staff'], true)) {
         throw new OutOfBoundsException('This account is not authorized to create parent profiles.');
     }
@@ -118,6 +138,10 @@ function parent_management_create_actor_record(mysqli $db, int $actorUserId, str
             (int) $actor['role_is_active'] === 1
         )) {
         throw new OutOfBoundsException('This account is not authorized to create parent profiles.');
+    }
+
+    if (is_array($currentUser) && ($currentUser['identity_type'] ?? null) === 'platform_admin') {
+        return $actor;
     }
 
     $roleId = (int) $actor['role_id'];

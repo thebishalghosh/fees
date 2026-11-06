@@ -61,8 +61,31 @@ $passwordPage = file_get_contents(__DIR__ . '/../auth/admin-password.php');
 $check(
     is_string($adminHandler)
         && str_contains($adminHandler, 'admin_auth_password_login(')
-        && str_contains($adminHandler, 'Invalid username/email or password.'),
-    'Use password authentication and a generic credential error'
+        && str_contains($adminHandler, 'Invalid username/email or password.')
+        && str_contains($adminHandler, "safe_redirect('/?login=1&account=admin');")
+        && str_contains($adminHandler, "safe_redirect('/?login=1&account=admin', 303)")
+        && str_contains($adminHandler, "set_flash('danger', \$loginError, 'admin_auth')")
+        && str_contains($adminHandler, "'identifier' => \$identifier")
+        && !str_contains($adminHandler, 'render_auth_page_start('),
+    'Use password authentication and return failed attempts to the admin modal'
+);
+$loginModalState = ['admin' => ['values' => ['identifier' => 'admin@example.invalid']]];
+$_SESSION['flash'] = [[
+    'type' => 'danger',
+    'message' => 'Invalid username/email or password.',
+    'scope' => 'admin_auth',
+]];
+$_GET = ['login' => '1', 'account' => 'admin'];
+ob_start();
+require __DIR__ . '/../includes/components/login-modal.php';
+$adminErrorModal = (string) ob_get_clean();
+unset($_GET['login'], $_GET['account'], $_SESSION['flash']);
+$check(
+    str_contains($adminErrorModal, 'Invalid username/email or password.')
+        && str_contains($adminErrorModal, 'value="admin@example.invalid"')
+        && str_contains($adminErrorModal, 'const shouldOpen = true;')
+        && str_contains($adminErrorModal, 'class="tab-pane fade show active" id="admin-login-panel"'),
+    'Reopen the admin sign-in modal with the failure message and identifier'
 );
 $check(
     is_string($adminHandler)

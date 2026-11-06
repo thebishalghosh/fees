@@ -571,6 +571,7 @@ function attendance_save_batch(
         }
 
         $savedCount = 0;
+        $databaseActorUserId = institution_audit_actor_user_id($actorUserId);
         foreach ($values['attendance'] as $studentId => $status) {
             $old = $existingByStudent[$studentId] ?? null;
             if (is_array($old) && $old['status'] === $status) {
@@ -581,7 +582,7 @@ function attendance_save_batch(
                     'UPDATE attendance_records SET status = ?, updated_by = ?
                      WHERE institution_id = ? AND id = ?'
                 );
-                $statement->bind_param('siii', $status, $actorUserId, $institutionId, $old['id']);
+                $statement->bind_param('siii', $status, $databaseActorUserId, $institutionId, $old['id']);
                 $statement->execute();
                 $recordId = (int) $old['id'];
                 $statement->close();
@@ -601,8 +602,8 @@ function attendance_save_batch(
                     $studentId,
                     $values['attendance_date'],
                     $status,
-                    $actorUserId,
-                    $actorUserId
+                    $databaseActorUserId,
+                    $databaseActorUserId
                 );
                 $statement->execute();
                 $recordId = (int) $statement->insert_id;
@@ -803,6 +804,7 @@ function attendance_save_session(
         $statement->close();
 
         $savedCount = 0;
+        $databaseActorUserId = institution_audit_actor_user_id($actorUserId);
         foreach ($values['attendance'] as $studentId => $status) {
             $student = $eligibleById[$studentId];
             $oldStatus = $student['attendance_status'] ?? null;
@@ -828,7 +830,7 @@ function attendance_save_session(
                 $student['student_enrolment_id'],
                 $student['placement_id'],
                 $status,
-                $actorUserId
+                $databaseActorUserId
             );
             $statement->execute();
             $recordId = (int) $statement->insert_id;

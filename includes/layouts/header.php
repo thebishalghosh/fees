@@ -12,7 +12,9 @@ function render_site_header(string $context = 'public', ?array $previewBranding 
     $notificationUnreadCount = 0;
     if (!$isPublic) {
         $user = current_user();
-        if ($user !== null && ($user['user_type'] ?? null) !== 'super_admin') {
+        if (current_platform_admin() !== null) {
+            $institutionBranding = institution_branding_get_for_current_user();
+        } elseif ($user !== null && ($user['user_type'] ?? null) !== 'super_admin') {
             $institutionBranding = institution_branding_get_for_current_user();
             if ($context === 'parent' && $user['user_type'] === 'parent') {
                 $db = db_connect();
@@ -38,7 +40,9 @@ function render_site_header(string $context = 'public', ?array $previewBranding 
             ['Students', $context === 'parent' ? '/parent/children' : '/admin/students/index'],
             ['Fees', $context === 'parent' ? '/parent/fees/index' : '/admin/fees/structures'],
         ];
-    $brandHref = $context === 'public' ? '#top' : route_url('/');
+    $brandHref = $context === 'public'
+        ? '#top'
+        : route_url(current_platform_admin() !== null ? '/platform-admin/dashboard' : '/');
     ?>
 <nav class="navbar navbar-expand-lg site-navbar<?php echo $isPublic ? ' site-navbar-public' : ' site-navbar-app'; ?>" id="site-nav">
     <div class="container">
@@ -105,13 +109,18 @@ function render_site_header(string $context = 'public', ?array $previewBranding 
                     <?php endif; ?>
                     <span class="workspace-label"><i class="bi bi-grid-1x2-fill me-2" aria-hidden="true"></i><?php
                         $workspaceLabel = ucfirst($context) . ' workspace';
-                        if ($context === 'parent') {
+                        if (current_platform_admin() !== null) {
+                            $workspaceLabel = (string) (current_platform_admin()['name'] ?? 'Platform administrator')
+                                . ' · Platform administrator';
+                        } elseif ($context === 'parent') {
                             $workspaceLabel = (string) ($_SESSION['user']['full_name'] ?? 'Parent')
                                 . ' · Active account';
                         }
                         echo e($workspaceLabel);
                     ?></span>
-                    <form method="post" action="<?php echo e(route_url('/logout')); ?>" class="m-0">
+                    <form method="post" action="<?php echo e(route_url(
+                        current_platform_admin() !== null ? '/auth/platform-admin-logout' : '/logout'
+                    )); ?>" class="m-0">
                         <?php echo csrf_field(); ?>
                         <button class="btn btn-outline-light btn-sm" type="submit">Sign out</button>
                     </form>

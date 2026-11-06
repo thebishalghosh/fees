@@ -10,18 +10,21 @@ require_once __DIR__ . '/../../services/admin-panel-service.php';
 function render_admin_institution_selector(): void
 {
     $user = current_user();
-    if ($user === null || $user['user_type'] !== 'super_admin') {
+    $isPlatformAdmin = current_platform_admin() !== null;
+    if (!$isPlatformAdmin && ($user === null || $user['user_type'] !== 'super_admin')) {
         return;
     }
 
     $institutions = admin_panel_institution_options(db_connect());
-    $selectedInstitutionId = admin_selected_institution_id();
+    $selectedInstitutionId = $isPlatformAdmin
+        ? platform_admin_selected_institution_id()
+        : admin_selected_institution_id();
     ?>
     <section class="dashboard-panel admin-institution-context d-flex flex-wrap justify-content-between align-items-center gap-3 p-3 mb-3" aria-label="Institution data filter">
         <div>
-            <span class="eyebrow">Super-admin workspace</span>
+            <span class="eyebrow"><?php echo $isPlatformAdmin ? 'Platform administrator workspace' : 'Super-admin workspace'; ?></span>
             <h2 class="h6 mb-1">Institution data filter</h2>
-            <p class="text-muted small mb-0">Choose an institution to view and manage only its records.</p>
+            <p class="text-muted small mb-0">Choose one institution. Your platform account has full access to its admin workspace.</p>
         </div>
         <form method="get" action="<?php echo e(route_url('/admin/dashboard')); ?>" class="d-flex flex-wrap align-items-end gap-2">
             <label class="form-label small mb-0" for="admin-institution-selector">Institution</label>
@@ -49,7 +52,7 @@ function render_app_page_start(
     $institutionBranding = institution_branding_get_for_current_user();
     render_page_head($title, $pageStyles, $institutionBranding);
     ?>
-<body class="app-page<?php echo $context === 'admin' ? ' app-page-admin' : ''; ?>">
+<body class="app-page<?php echo $context === 'admin' ? ' app-page-admin' : ''; ?><?php echo $context === 'admin' && current_platform_admin() !== null ? ' app-page-platform-admin' : ''; ?>">
 <?php render_site_header($context); ?>
 <div class="app-layout">
     <?php render_sidebar_nav($context); ?>

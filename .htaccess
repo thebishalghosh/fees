@@ -12,6 +12,8 @@ RewriteRule ^login/?$ index.php?login=1 [END,QSA]
 RewriteRule ^login/admin/?$ auth/admin-login.php [END]
 RewriteRule ^login/staff/?$ auth/login.php [END]
 RewriteRule ^login/parent/?$ auth/parent-login.php [END]
+RewriteRule ^platform-admin/login/submit/?$ auth/platform-admin-login.php [END]
+RewriteRule ^platform-admin/login/?$ index.php?login=1&account=platform_admin [END,QSA]
 RewriteRule ^admin-password/?$ auth/admin-password.php [END]
 RewriteRule ^verify-otp/?$ auth/verify-otp.php [END]
 RewriteRule ^resend-otp/?$ auth/resend-otp.php [END]
@@ -29,7 +31,7 @@ RewriteRule ^admin/academics/classes/?$ admin/academics/classes.php [END,QSA]
 
 # Resolve clean application paths only when the corresponding PHP handler exists.
 RewriteCond %{REQUEST_FILENAME}.php -f
-RewriteRule ^(auth|admin|parent|super-admin)/(.+)$ $1/$2.php [END,QSA]
+RewriteRule ^(auth|admin|parent|super-admin|platform-admin)/(.+)$ $1/$2.php [END,QSA]
 
 <FilesMatch "(?i)^(?:\.env(?:\..*)?|composer\.(?:json|lock)|.*\.(?:sql|log|ini|ya?ml|bak|old|dist))$">
     Require all denied

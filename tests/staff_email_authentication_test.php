@@ -125,7 +125,12 @@ $_GET = ['login' => '1', 'account' => 'staff'];
 ob_start();
 require __DIR__ . '/../includes/components/login-modal.php';
 $staffModalHtml = (string) ob_get_clean();
-$check(str_contains($staffModalHtml, '>Staff</button>') && str_contains($staffModalHtml, 'aria-selected="true"'), 'Select the staff tab for a staff login response');
+$check(
+    str_contains($staffModalHtml, 'id="team-login-tab"')
+        && str_contains($staffModalHtml, 'id="staff-login-tab"')
+        && str_contains($staffModalHtml, 'aria-selected="true">Staff member</button>'),
+    'Select the school team and staff account for a staff login response'
+);
 $check(!str_contains($staffModalHtml, $legacyParentMessage), 'Do not show a stale legacy parent message in the staff flow');
 $check(str_contains($staffModalHtml, 'Unable to send a sign-in code right now.'), 'Show the current staff-specific failure');
 $check(count($_SESSION['flash'] ?? []) === 1, 'Keep the parent message queued for the parent flow');

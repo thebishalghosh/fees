@@ -242,14 +242,29 @@
     background: #edf2fa;
 }
 
-.login-modal-tabs .nav-link {
+.login-modal-tabs .nav-link,
+.login-team-tabs .nav-link {
     border-radius: 999px;
     color: var(--muted);
-    font-size: .84rem;
     font-weight: 600;
 }
 
-.login-modal-tabs .nav-link.active {
+.login-modal-tabs .nav-link {
+    font-size: .9rem;
+}
+
+.login-team-tabs {
+    gap: .5rem;
+}
+
+.login-team-tabs .nav-link {
+    border: 1px solid var(--line);
+    background: #fff;
+    font-size: .82rem;
+}
+
+.login-modal-tabs .nav-link.active,
+.login-team-tabs .nav-link.active {
     color: #fff;
     background: var(--cobalt-700);
     box-shadow: 0 5px 14px rgb(0 24 63 / 18%);
@@ -265,6 +280,22 @@
     justify-content: center;
     padding-bottom: 1.3rem;
     text-align: center;
+}
+
+.login-modal-footer-content {
+    display: grid;
+    gap: .45rem;
+}
+
+.login-modal-platform-link {
+    color: var(--cobalt-700);
+    font-size: .82rem;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.login-modal-platform-link:hover {
+    text-decoration: underline;
 }
 
 .hero-badge {

@@ -82,6 +82,7 @@ $route = file_get_contents(__DIR__ . '/../super-admin/institutions.php');
 $service = file_get_contents(__DIR__ . '/../services/institution-onboarding-service.php');
 $rewriteRules = file_get_contents(__DIR__ . '/../.htaccess');
 $sidebar = file_get_contents(__DIR__ . '/../includes/layouts/sidebar.php');
+$platformAdminRoute = file_get_contents(__DIR__ . '/../platform-admin/dashboard.php');
 $schema = file_get_contents(__DIR__ . '/../database/schema.sql');
 $migration = file_get_contents(__DIR__ . '/../database/migrations/20261103_add_institution_profile_fields.sql');
 $check(
@@ -106,10 +107,22 @@ $check(
 );
 $check(
     is_string($rewriteRules)
-        && str_contains($rewriteRules, '(auth|admin|parent|super-admin)')
+        && str_contains($rewriteRules, '(auth|admin|parent|super-admin|platform-admin)')
         && is_string($sidebar)
         && str_contains($sidebar, "current_user()['user_type'] ?? null) === 'super_admin'"),
-    'Add a clean route and conditionally show the institution-management navigation link'
+    'Add a clean route and preserve institution-management navigation'
+);
+$check(
+    is_string($service)
+        && str_contains($service, "institution_onboarding_authorize('institutions.view')")
+        && str_contains($service, "institution_onboarding_authorize('institutions.create')")
+        && str_contains($service, "institution_onboarding_authorize('institutions.update')")
+        && str_contains($service, "institution_onboarding_authorize('institutions.suspend')")
+        && str_contains($service, 'write_platform_audit_log(')
+        && is_string($platformAdminRoute)
+        && str_contains($platformAdminRoute, 'require_platform_admin()')
+        && str_contains($platformAdminRoute, 'institution_onboarding_list('),
+    'Authorize platform institution management by permission and record platform audit events'
 );
 $check(
     is_string($schema)

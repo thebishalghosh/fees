@@ -461,6 +461,7 @@ function examination_results_save_marks(
     if ($normalized === []) {
         return 0;
     }
+    $recordingUserId = institution_audit_actor_user_id($userId);
 
     $db->begin_transaction();
     try {
@@ -548,7 +549,7 @@ function examination_results_save_marks(
                 recorded_by = VALUES(recorded_by), updated_at = CURRENT_TIMESTAMP'
         );
         foreach ($normalized as $studentId => $marks) {
-            $upsert->bind_param('iiisi', $institutionId, $examId, $studentId, $marks, $userId);
+            $upsert->bind_param('iiisi', $institutionId, $examId, $studentId, $marks, $recordingUserId);
             $upsert->execute();
         }
         $upsert->close();

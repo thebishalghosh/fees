@@ -58,7 +58,14 @@ function render_sidebar_nav(string $context = 'admin'): void
         ],
     ];
     $items = $menus[$context] ?? $menus['admin'];
-    if ($context === 'admin' && (current_user()['user_type'] ?? null) === 'super_admin') {
+    $currentUser = current_user();
+    $isPlatformAdmin = current_platform_admin() !== null;
+    if ($context === 'admin' && $isPlatformAdmin) {
+        array_unshift($items, ['Institutions', '/platform-admin/dashboard', 'bi-buildings', null, 'Administration']);
+    }
+    if ($context === 'admin'
+        && (current_user()['user_type'] ?? null) === 'super_admin'
+        && !$isPlatformAdmin) {
         $items[] = ['Institutions', '/super-admin/institutions', 'bi-buildings', null, 'Administration'];
     }
     if ($context === 'admin' && (current_user()['user_type'] ?? null) !== 'super_admin') {
@@ -115,10 +122,15 @@ function render_sidebar_nav(string $context = 'admin'): void
             <?php foreach ($items as $item): ?>
                 <?php [$label, $href, $icon] = array_slice($item, 0, 3); ?>
                 <?php if (isset($item[3])
+                    && !$isPlatformAdmin
                     && !(($user = current_user()) !== null && $user['user_type'] === 'super_admin' && $href === '/admin/academics/classes')
                     && !user_has_compatible_permission($item[3], (string) ($item[5] ?? $item[3]))) { continue; } ?>
-                <?php if ($href === '/admin/staff/permissions' && !in_array((current_user()['user_type'] ?? null), ['admin', 'super_admin'], true)) { continue; } ?>
-                <?php if ($href === '/admin/settings/institution' && (current_user()['user_type'] ?? null) === 'super_admin') { continue; } ?>
+                <?php if ($href === '/admin/staff/permissions'
+                    && !in_array((current_user()['user_type'] ?? null), ['admin', 'super_admin'], true)
+                    && !$isPlatformAdmin) { continue; } ?>
+                    <?php if ($href === '/admin/settings/institution'
+                        && (current_user()['user_type'] ?? null) === 'super_admin'
+                        && !$isPlatformAdmin) { continue; } ?>
                 <?php $group = $item[4] ?? ($context === 'parent' ? null : 'Workspace'); ?>
                 <?php if ($group !== $lastGroup): ?><div class="sidebar-heading mt-3"><?php echo e($group); ?></div><?php $lastGroup = $group; ?><?php endif; ?>
                 <a class="nav-link<?php echo $currentPath === $href ? ' active' : ''; ?>" href="<?php echo e(route_url($href)); ?>"<?php echo $currentPath === $href ? ' aria-current="page"' : ''; ?>>

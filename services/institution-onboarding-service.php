@@ -19,6 +19,63 @@ function institution_onboarding_assert_super_admin(): array
     return $user;
 }
 
+function institution_onboarding_authorize(string $platformPermission): array
+{
+    $platformAdmin = current_platform_admin();
+    if ($platformAdmin !== null) {
+        require_platform_permission($platformPermission);
+        return [
+            'id' => (int) $platformAdmin['id'],
+            'actor_type' => 'platform_admin',
+        ];
+    }
+
+    $user = institution_onboarding_assert_super_admin();
+    return [
+        'id' => (int) $user['id'],
+        'actor_type' => 'super_admin',
+    ];
+}
+
+function institution_onboarding_write_actor_audit(
+    mysqli $db,
+    array $actor,
+    int $institutionId,
+    string $action,
+    string $entityType,
+    ?string $entityId,
+    ?array $oldValues = null,
+    ?array $newValues = null
+): void {
+    if (($actor['actor_type'] ?? null) === 'platform_admin') {
+        write_platform_audit_log(
+            $db,
+            (int) $actor['id'],
+            'platform.' . $action,
+            $entityType,
+            $entityId === null ? null : (int) $entityId,
+            $institutionId,
+            null,
+            platform_admin_correlation_id(),
+            is_string($_SERVER['HTTP_USER_AGENT'] ?? null) ? $_SERVER['HTTP_USER_AGENT'] : null,
+            filter_var($_SERVER['REMOTE_ADDR'] ?? null, FILTER_VALIDATE_IP) ?: null
+        );
+        return;
+    }
+
+    write_audit_log(
+        $db,
+        $institutionId,
+        (int) $actor['id'],
+        'super_admin',
+        $action,
+        $entityType,
+        $entityId,
+        $oldValues,
+        $newValues
+    );
+}
+
 function institution_onboarding_bind(mysqli_stmt $statement, string $types, array &$values): void
 {
     $parameters = [$types];
@@ -110,7 +167,7 @@ function institution_onboarding_list(
     string $search = '',
     string $status = ''
 ): array {
-    institution_onboarding_assert_super_admin();
+    institution_onboarding_authorize('institutions.view');
     $search = trim($search);
     if (mb_strlen($search, 'UTF-8') > 120) {
         throw new InvalidArgumentException('The institution search is too long.');
@@ -162,7 +219,7 @@ function institution_onboarding_list(
 
 function institution_onboarding_get(mysqli $db, int $institutionId): ?array
 {
-    institution_onboarding_assert_super_admin();
+    institution_onboarding_authorize('institutions.view');
     if ($institutionId < 1) {
         return null;
     }
@@ -203,7 +260,7 @@ function institution_onboarding_get(mysqli $db, int $institutionId): ?array
 
 function institution_onboarding_create(mysqli $db, array $input): int
 {
-    $actor = institution_onboarding_assert_super_admin();
+    $actor = institution_onboarding_authorize('institutions.create');
     $values = institution_onboarding_validate_input($input, true);
     $db->begin_transaction();
     try {
@@ -253,22 +310,20 @@ function institution_onboarding_create(mysqli $db, array $input): int
         $administratorId = (int) $statement->insert_id;
         $statement->close();
 
-        write_audit_log(
+        institution_onboarding_write_actor_audit(
             $db,
+            $actor,
             $institutionId,
-            (int) $actor['id'],
-            'super_admin',
             'institution.created',
             'institution',
             (string) $institutionId,
             null,
             array_intersect_key($values, array_flip($institutionFields))
         );
-        write_audit_log(
+        institution_onboarding_write_actor_audit(
             $db,
+            $actor,
             $institutionId,
-            (int) $actor['id'],
-            'super_admin',
             'institution.initial_admin_created',
             'user',
             (string) $administratorId,
@@ -292,7 +347,7 @@ function institution_onboarding_create(mysqli $db, array $input): int
 
 function institution_onboarding_update(mysqli $db, int $institutionId, array $input): void
 {
-    $actor = institution_onboarding_assert_super_admin();
+    $actor = institution_onboarding_authorize('institutions.update');
     $values = institution_onboarding_validate_input($input, false);
     if ($institutionId < 1) {
         throw new InvalidArgumentException('The institution selection is invalid.');
@@ -327,11 +382,10 @@ function institution_onboarding_update(mysqli $db, int $institutionId, array $in
         $statement->execute();
         $statement->close();
 
-        write_audit_log(
+        institution_onboarding_write_actor_audit(
             $db,
+            $actor,
             $institutionId,
-            (int) $actor['id'],
-            'super_admin',
             'institution.profile_updated',
             'institution',
             (string) $institutionId,
@@ -350,7 +404,7 @@ function institution_onboarding_set_status(
     int $institutionId,
     string $status
 ): void {
-    $actor = institution_onboarding_assert_super_admin();
+    $actor = institution_onboarding_authorize('institutions.suspend');
     if ($institutionId < 1 || !in_array($status, ['active', 'inactive'], true)) {
         throw new InvalidArgumentException('Choose an active or inactive institution status.');
     }
@@ -374,11 +428,10 @@ function institution_onboarding_set_status(
         $statement->bind_param('si', $status, $institutionId);
         $statement->execute();
         $statement->close();
-        write_audit_log(
+        institution_onboarding_write_actor_audit(
             $db,
+            $actor,
             $institutionId,
-            (int) $actor['id'],
-            'super_admin',
             $status === 'active' ? 'institution.activated' : 'institution.deactivated',
             'institution',
             (string) $institutionId,

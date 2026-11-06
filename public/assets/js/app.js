@@ -11,6 +11,12 @@
     updateNavOnScroll();
     window.addEventListener('scroll', updateNavOnScroll, { passive: true });
 
+    document.querySelectorAll('[data-auto-show-toast]').forEach((toastElement) => {
+        if (window.bootstrap && window.bootstrap.Toast) {
+            window.bootstrap.Toast.getOrCreateInstance(toastElement).show();
+        }
+    });
+
     const sidebar = document.getElementById('app-sidebar');
     if (document.body.classList.contains('app-page-admin') && sidebar) {
         const sidebarScrollArea = window.matchMedia('(min-width: 992px)').matches

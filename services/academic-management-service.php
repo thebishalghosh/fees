@@ -1625,6 +1625,7 @@ function academic_management_append_status_event(
     string $reason
 ): void {
     $effectiveAt = (new DateTimeImmutable())->format('Y-m-d H:i:s.u');
+    $actorUserId = institution_audit_actor_user_id($actorUserId);
     $statement = $db->prepare(
         'INSERT INTO student_enrolment_status_events
             (institution_id, student_enrolment_id, previous_status, new_status, effective_at, reason, actor_user_id)
@@ -1676,6 +1677,7 @@ function academic_management_append_placement(
              academic_group_id, previous_placement_id, effective_at, reason, actor_user_id)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
+    $actorUserId = institution_audit_actor_user_id($actorUserId);
     $statement->bind_param(
         'iiiiiissi',
         $institutionId,
