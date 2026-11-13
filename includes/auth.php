@@ -658,13 +658,41 @@ function admin_route_permissions(string $relativePath, string $section, string $
             return [$editing ? 'announcements.edit' : 'announcements.create', 'notifications.manage'];
         }
     }
-    if ($section === 'admissions' && $action === 'view' && $method === 'POST') {
-        return match ($_POST['action'] ?? null) {
-            'approve' => ['admissions.approve', 'admissions.manage'],
-            'reject' => ['admissions.reject', 'admissions.manage'],
-            'convert' => ['admissions.approve', 'admissions.manage'],
-            default => ['admissions.edit', 'admissions.manage'],
-        };
+    if ($section === 'admissions') {
+        if ($relativePath === 'admissions/settings.php') {
+            return ['admissions.edit', 'admissions.manage'];
+        }
+        if ($relativePath === 'admissions/enquiries/view.php' && $method === 'POST') {
+            return ($_POST['action'] ?? null) === 'convert'
+                ? ['admissions.create', 'admissions.manage']
+                : ['admissions.edit', 'admissions.manage'];
+        }
+        if ($relativePath === 'admissions/view.php' && $method === 'POST') {
+            return match ($_POST['action'] ?? null) {
+                'approve' => ['admissions.approve', 'admissions.manage'],
+                'reject' => ['admissions.reject', 'admissions.manage'],
+                'convert' => ['admissions.approve', 'admissions.manage'],
+                'information_requested' => ['admissions.edit', 'admissions.manage'],
+                default => ['admissions.edit', 'admissions.manage'],
+            };
+        }
+        if (in_array($action, ['create', 'store'], true)
+            && !($action === 'store' && isset($_POST['admission_id']) && $_POST['admission_id'] !== '')) {
+            return ['admissions.create', 'admissions.manage'];
+        }
+        if (in_array($action, ['edit', 'update', 'document-upload', 'document-verify'], true)
+            || ($action === 'store' && isset($_POST['admission_id']) && $_POST['admission_id'] !== '')) {
+            return ['admissions.edit', 'admissions.manage'];
+        }
+        if ($action === 'approve') {
+            return ['admissions.approve', 'admissions.manage'];
+        }
+        if ($action === 'reject') {
+            return ['admissions.reject', 'admissions.manage'];
+        }
+        if ($operation === 'view') {
+            return ['admissions.view', 'admissions.manage'];
+        }
     }
     if ($section === 'academics') {
         if ($action === 'create-class') {

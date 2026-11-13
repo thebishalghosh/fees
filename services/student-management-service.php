@@ -37,6 +37,26 @@ function student_management_institution_id(): int
     return $institutionId;
 }
 
+function student_management_extended_profile_schema_ready(mysqli $db): bool
+{
+    $columns = [
+        'mobile', 'email', 'address_line1', 'address_line2', 'city', 'state',
+        'postal_code', 'country', 'previous_school',
+    ];
+    $placeholders = implode(', ', array_fill(0, count($columns), '?'));
+    $statement = $db->prepare(
+        'SELECT COUNT(*) FROM information_schema.columns
+         WHERE table_schema = DATABASE() AND table_name = \'students\'
+           AND column_name IN (' . $placeholders . ')'
+    );
+    $values = $columns;
+    student_management_bind_params($statement, str_repeat('s', count($values)), $values);
+    $statement->execute();
+    $count = (int) $statement->get_result()->fetch_column();
+    $statement->close();
+    return $count === count($columns);
+}
+
 function student_management_valid_date(string $date): bool
 {
     if (preg_match('/^\d{4}-\d{2}-\d{2}$/D', $date) !== 1 || (int) substr($date, 0, 4) < 1000) {
@@ -50,7 +70,11 @@ function student_management_validate_profile(array $input, bool $creating = true
 {
     $errors = [];
     $fieldErrors = [];
-    foreach (['full_name', 'student_code', 'admission_date', 'date_of_birth', 'gender'] as $field) {
+    foreach ([
+        'full_name', 'student_code', 'admission_date', 'date_of_birth', 'gender',
+        'mobile', 'email', 'address_line1', 'address_line2', 'city', 'state',
+        'postal_code', 'country', 'previous_school',
+    ] as $field) {
         if (array_key_exists($field, $input) && !is_string($input[$field])) {
             $errors[] = 'One or more student details have an unsupported value.';
             $fieldErrors[$field] = 'Enter a valid value for this field.';
@@ -90,6 +114,29 @@ function student_management_validate_profile(array $input, bool $creating = true
     if ($gender !== null && !in_array($gender, STUDENT_MANAGEMENT_GENDERS, true)) {
         $errors[] = 'Choose a supported gender value.';
         $fieldErrors['gender'] = 'Choose a supported gender value.';
+    }
+    $contact = [];
+    foreach ([
+        'mobile' => 20,
+        'email' => 255,
+        'address_line1' => 255,
+        'address_line2' => 255,
+        'city' => 120,
+        'state' => 120,
+        'postal_code' => 20,
+        'country' => 120,
+        'previous_school' => 200,
+    ] as $field => $maxLength) {
+        $raw = isset($input[$field]) && is_string($input[$field]) ? trim($input[$field]) : '';
+        if (mb_strlen($raw, 'UTF-8') > $maxLength || preg_match('/[\x00-\x1F\x7F]/', $raw) === 1) {
+            $errors[] = 'One or more student contact or address details are invalid.';
+            $fieldErrors[$field] = 'Enter a value within the allowed length.';
+        }
+        if ($field === 'email' && $raw !== '' && filter_var($raw, FILTER_VALIDATE_EMAIL) === false) {
+            $errors[] = 'Enter a valid student email address.';
+            $fieldErrors[$field] = 'Enter a valid email address.';
+        }
+        $contact[$field] = $raw === '' ? null : $raw;
     }
 
     $ids = [];
@@ -136,6 +183,7 @@ function student_management_validate_profile(array $input, bool $creating = true
             'student_code' => $code,
             'date_of_birth' => $dateOfBirthInput === '' ? null : $dateOfBirthInput,
             'gender' => $gender,
+            ...$contact,
             'admission_date' => $admissionDate,
             'academic_year_id' => $ids['academic_year_id'],
             'course_id' => $ids['course_id'],
@@ -183,6 +231,8 @@ function student_management_old_form_values(array $input, string $form, ?int $st
     }
     foreach ([
         'full_name', 'student_code', 'date_of_birth', 'gender', 'admission_date',
+        'mobile', 'email', 'address_line1', 'address_line2', 'city', 'state',
+        'postal_code', 'country', 'previous_school',
         'academic_year_id', 'course_id', 'class_id', 'batch_id', 'status',
     ] as $field) {
         if (array_key_exists($field, $input)) {
@@ -336,6 +386,7 @@ function student_management_list(
 function student_management_get_options(mysqli $db, int $institutionId): array
 {
     $options = [];
+    $options['extended_profile_available'] = student_management_extended_profile_schema_ready($db);
     $configurationStatement = $db->prepare(
         'SELECT academic_model FROM institutions WHERE id = ?'
     );
@@ -393,9 +444,17 @@ function student_management_get_options(mysqli $db, int $institutionId): array
 
 function student_management_get_student(mysqli $db, int $institutionId, int $studentId): ?array
 {
+    $extendedProfileReady = student_management_extended_profile_schema_ready($db);
+    $extendedProfileColumns = $extendedProfileReady
+        ? 's.mobile, s.email, s.address_line1, s.address_line2, s.city, s.state,
+           s.postal_code, s.country, s.previous_school,'
+        : 'NULL AS mobile, NULL AS email, NULL AS address_line1, NULL AS address_line2,
+           NULL AS city, NULL AS state, NULL AS postal_code, NULL AS country,
+           NULL AS previous_school,';
     $statement = $db->prepare(
         'SELECT s.id, s.institution_id, s.academic_year_id, s.course_id, s.class_id,
                 s.batch_id, s.student_code, s.full_name, s.date_of_birth, s.gender,
+                ' . $extendedProfileColumns . '
                 s.admission_date, s.status, s.created_at, s.updated_at,
                 i.name AS institution_name, i.email AS institution_email,
                 i.phone AS institution_phone, i.address_line1 AS institution_address_line1,
@@ -640,6 +699,15 @@ function student_management_audit_values(array $student, array $parentIds): arra
         'full_name' => (string) $student['full_name'],
         'date_of_birth' => $student['date_of_birth'],
         'gender' => $student['gender'],
+        'mobile' => $student['mobile'] ?? null,
+        'email' => $student['email'] ?? null,
+        'address_line1' => $student['address_line1'] ?? null,
+        'address_line2' => $student['address_line2'] ?? null,
+        'city' => $student['city'] ?? null,
+        'state' => $student['state'] ?? null,
+        'postal_code' => $student['postal_code'] ?? null,
+        'country' => $student['country'] ?? null,
+        'previous_school' => $student['previous_school'] ?? null,
         'admission_date' => (string) $student['admission_date'],
         'academic_year_id' => $student['academic_year_id'] === null ? null : (int) $student['academic_year_id'],
         'course_id' => $student['course_id'] === null ? null : (int) $student['course_id'],
@@ -669,26 +737,71 @@ function student_management_create(
         student_management_assert_unique_code($db, $institutionId, $profile['student_code']);
         student_management_assert_references($db, $institutionId, $profile);
         student_management_valid_parent_ids($db, $institutionId, $parentIds);
-        $statement = $db->prepare(
-            'INSERT INTO students (
-                institution_id, academic_year_id, course_id, class_id, batch_id,
-                student_code, full_name, date_of_birth, gender, admission_date, status
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-        );
-        $statement->bind_param(
-            'iiiiissssss',
-            $institutionId,
-            $profile['academic_year_id'],
-            $profile['course_id'],
-            $profile['class_id'],
-            $profile['batch_id'],
-            $profile['student_code'],
-            $profile['full_name'],
-            $profile['date_of_birth'],
-            $profile['gender'],
-            $profile['admission_date'],
-            $profile['status']
-        );
+        $extendedProfileReady = student_management_extended_profile_schema_ready($db);
+        $extendedProfile = [
+            'mobile', 'email', 'address_line1', 'address_line2', 'city', 'state',
+            'postal_code', 'country', 'previous_school',
+        ];
+        if (!$extendedProfileReady && array_filter(
+            $extendedProfile,
+            fn (string $field): bool => $profile[$field] !== null
+        ) !== []) {
+            throw new DomainException('Apply the admission workflow migration before saving extended student details.');
+        }
+        if ($extendedProfileReady) {
+            $statement = $db->prepare(
+                'INSERT INTO students (
+                    institution_id, academic_year_id, course_id, class_id, batch_id,
+                    student_code, full_name, date_of_birth, gender, mobile, email, address_line1,
+                    address_line2, city, state, postal_code, country, previous_school,
+                    admission_date, status
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            );
+            $statement->bind_param(
+                'iiiiisssssssssssssss',
+                $institutionId,
+                $profile['academic_year_id'],
+                $profile['course_id'],
+                $profile['class_id'],
+                $profile['batch_id'],
+                $profile['student_code'],
+                $profile['full_name'],
+                $profile['date_of_birth'],
+                $profile['gender'],
+                $profile['mobile'],
+                $profile['email'],
+                $profile['address_line1'],
+                $profile['address_line2'],
+                $profile['city'],
+                $profile['state'],
+                $profile['postal_code'],
+                $profile['country'],
+                $profile['previous_school'],
+                $profile['admission_date'],
+                $profile['status']
+            );
+        } else {
+            $statement = $db->prepare(
+                'INSERT INTO students (
+                    institution_id, academic_year_id, course_id, class_id, batch_id,
+                    student_code, full_name, date_of_birth, gender, admission_date, status
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            );
+            $statement->bind_param(
+                'iiiiissssss',
+                $institutionId,
+                $profile['academic_year_id'],
+                $profile['course_id'],
+                $profile['class_id'],
+                $profile['batch_id'],
+                $profile['student_code'],
+                $profile['full_name'],
+                $profile['date_of_birth'],
+                $profile['gender'],
+                $profile['admission_date'],
+                $profile['status']
+            );
+        }
         $statement->execute();
         $studentId = (int) $db->insert_id;
         $statement->close();
@@ -743,6 +856,17 @@ function student_management_update(
         if ($old === null) {
             throw new OutOfBoundsException('The student record was not found in this institution.');
         }
+        $extendedProfileReady = student_management_extended_profile_schema_ready($db);
+        $extendedProfile = [
+            'mobile', 'email', 'address_line1', 'address_line2', 'city', 'state',
+            'postal_code', 'country', 'previous_school',
+        ];
+        if (!$extendedProfileReady && array_filter(
+            $extendedProfile,
+            fn (string $field): bool => $profile[$field] !== null
+        ) !== []) {
+            throw new DomainException('Apply the admission workflow migration before saving extended student details.');
+        }
         $configuration = academic_management_configuration($db, $institutionId);
         if ($configuration['academic_model'] !== null) {
             foreach (['academic_year_id', 'course_id', 'class_id', 'batch_id'] as $field) {
@@ -750,44 +874,109 @@ function student_management_update(
                     throw new DomainException('Academic placement is managed through Student Enrolments.');
                 }
             }
-            $statement = $db->prepare(
-                'UPDATE students
-                 SET student_code = ?, full_name = ?, date_of_birth = ?, gender = ?,
-                     admission_date = ?
-                 WHERE institution_id = ? AND id = ?'
-            );
-            $statement->bind_param(
-                'sssssii',
-                $profile['student_code'],
-                $profile['full_name'],
-                $profile['date_of_birth'],
-                $profile['gender'],
-                $profile['admission_date'],
-                $institutionId,
-                $studentId
-            );
+            if ($extendedProfileReady) {
+                $statement = $db->prepare(
+                    'UPDATE students
+                     SET student_code = ?, full_name = ?, date_of_birth = ?, gender = ?,
+                         mobile = ?, email = ?, address_line1 = ?, address_line2 = ?,
+                         city = ?, state = ?, postal_code = ?, country = ?, previous_school = ?,
+                         admission_date = ?
+                     WHERE institution_id = ? AND id = ?'
+                );
+                $statement->bind_param(
+                    'ssssssssssssssii',
+                    $profile['student_code'],
+                    $profile['full_name'],
+                    $profile['date_of_birth'],
+                    $profile['gender'],
+                    $profile['mobile'],
+                    $profile['email'],
+                    $profile['address_line1'],
+                    $profile['address_line2'],
+                    $profile['city'],
+                    $profile['state'],
+                    $profile['postal_code'],
+                    $profile['country'],
+                    $profile['previous_school'],
+                    $profile['admission_date'],
+                    $institutionId,
+                    $studentId
+                );
+            } else {
+                $statement = $db->prepare(
+                    'UPDATE students
+                     SET student_code = ?, full_name = ?, date_of_birth = ?, gender = ?,
+                         admission_date = ?
+                     WHERE institution_id = ? AND id = ?'
+                );
+                $statement->bind_param(
+                    'sssssii',
+                    $profile['student_code'],
+                    $profile['full_name'],
+                    $profile['date_of_birth'],
+                    $profile['gender'],
+                    $profile['admission_date'],
+                    $institutionId,
+                    $studentId
+                );
+            }
         } else {
-            $statement = $db->prepare(
-                'UPDATE students
-                 SET academic_year_id = ?, course_id = ?, class_id = ?, batch_id = ?,
-                     student_code = ?, full_name = ?, date_of_birth = ?, gender = ?,
-                     admission_date = ?
-                 WHERE institution_id = ? AND id = ?'
-            );
-            $statement->bind_param(
-                'iiiisssssii',
-                $profile['academic_year_id'],
-                $profile['course_id'],
-                $profile['class_id'],
-                $profile['batch_id'],
-                $profile['student_code'],
-                $profile['full_name'],
-                $profile['date_of_birth'],
-                $profile['gender'],
-                $profile['admission_date'],
-                $institutionId,
-                $studentId
-            );
+            if ($extendedProfileReady) {
+                $statement = $db->prepare(
+                    'UPDATE students
+                     SET academic_year_id = ?, course_id = ?, class_id = ?, batch_id = ?,
+                         student_code = ?, full_name = ?, date_of_birth = ?, gender = ?,
+                         mobile = ?, email = ?, address_line1 = ?, address_line2 = ?,
+                         city = ?, state = ?, postal_code = ?, country = ?, previous_school = ?,
+                         admission_date = ?
+                     WHERE institution_id = ? AND id = ?'
+                );
+                $statement->bind_param(
+                    'iiiissssssssssssssii',
+                    $profile['academic_year_id'],
+                    $profile['course_id'],
+                    $profile['class_id'],
+                    $profile['batch_id'],
+                    $profile['student_code'],
+                    $profile['full_name'],
+                    $profile['date_of_birth'],
+                    $profile['gender'],
+                    $profile['mobile'],
+                    $profile['email'],
+                    $profile['address_line1'],
+                    $profile['address_line2'],
+                    $profile['city'],
+                    $profile['state'],
+                    $profile['postal_code'],
+                    $profile['country'],
+                    $profile['previous_school'],
+                    $profile['admission_date'],
+                    $institutionId,
+                    $studentId
+                );
+            } else {
+                $statement = $db->prepare(
+                    'UPDATE students
+                     SET academic_year_id = ?, course_id = ?, class_id = ?, batch_id = ?,
+                         student_code = ?, full_name = ?, date_of_birth = ?, gender = ?,
+                         admission_date = ?
+                     WHERE institution_id = ? AND id = ?'
+                );
+                $statement->bind_param(
+                    'iiiisssssii',
+                    $profile['academic_year_id'],
+                    $profile['course_id'],
+                    $profile['class_id'],
+                    $profile['batch_id'],
+                    $profile['student_code'],
+                    $profile['full_name'],
+                    $profile['date_of_birth'],
+                    $profile['gender'],
+                    $profile['admission_date'],
+                    $institutionId,
+                    $studentId
+                );
+            }
         }
         $statement->execute();
         $statement->close();
@@ -828,7 +1017,9 @@ function student_management_toggle_status(
     try {
         $statement = $db->prepare(
             'SELECT id, institution_id, student_code, full_name, date_of_birth, gender,
-                    admission_date, academic_year_id, course_id, class_id, batch_id, status
+                    mobile, email, address_line1, address_line2, city, state, postal_code,
+                    country, previous_school, admission_date, academic_year_id, course_id,
+                    class_id, batch_id, status
              FROM students WHERE institution_id = ? AND id = ? FOR UPDATE'
         );
         $statement->bind_param('ii', $institutionId, $studentId);
@@ -837,6 +1028,15 @@ function student_management_toggle_status(
         $statement->close();
         if (!is_array($student)) {
             throw new OutOfBoundsException('The student record was not found in this institution.');
+        }
+        $profileSnapshot = student_management_get_student($db, $institutionId, $studentId);
+        if ($profileSnapshot !== null) {
+            foreach ([
+                'mobile', 'email', 'address_line1', 'address_line2', 'city', 'state',
+                'postal_code', 'country', 'previous_school',
+            ] as $field) {
+                $student[$field] = $profileSnapshot[$field];
+            }
         }
         if (!in_array($student['status'], ['prospect', 'admitted', 'active', 'inactive'], true)) {
             throw new InvalidArgumentException('Graduated or withdrawn students cannot be toggled from this page.');

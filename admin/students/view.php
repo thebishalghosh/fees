@@ -76,7 +76,10 @@ render_app_page_start('Student Details', 'View saved student, academic placement
                 <div><dt>Student ID</dt><dd><?php echo e($student['student_code']); ?></dd></div>
                 <div><dt>Date of birth</dt><dd><?php echo e($student['date_of_birth'] ? date('j M Y', strtotime((string) $student['date_of_birth'])) : 'Not provided'); ?></dd></div>
                 <div><dt>Gender</dt><dd><?php echo e($student['gender'] !== null ? ucwords(str_replace('_', ' ', (string) $student['gender'])) : 'Not specified'); ?></dd></div>
+                <div><dt>Mobile</dt><dd><?php echo e($student['mobile'] ?? 'Not provided'); ?></dd></div>
+                <div><dt>Email</dt><dd><?php echo e($student['email'] ?? 'Not provided'); ?></dd></div>
                 <div><dt>Admission date</dt><dd><?php echo e(date('j M Y', strtotime((string) $student['admission_date']))); ?></dd></div>
+                <div><dt>Previous school</dt><dd><?php echo e($student['previous_school'] ?? 'Not provided'); ?></dd></div>
                 <div><dt>Record created</dt><dd><time datetime="<?php echo e(date('c', strtotime((string) $student['created_at']))); ?>"><?php echo e(date('j M Y, g:i a', strtotime((string) $student['created_at']))); ?></time></dd></div>
             </dl>
         </article>
@@ -88,6 +91,14 @@ render_app_page_start('Student Details', 'View saved student, academic placement
                 <div><dt>Course</dt><dd><?php echo e($student['course_name'] ?? 'Not assigned'); ?></dd></div>
                 <div><dt>Class</dt><dd><?php echo e($student['class_name'] ?? 'Not assigned'); ?></dd></div>
                 <div><dt>Batch</dt><dd><?php echo e($student['batch_name'] ?? 'Not assigned'); ?></dd></div>
+                <div><dt>Address</dt><dd><?php echo e(implode(', ', array_filter([
+                    $student['address_line1'],
+                    $student['address_line2'],
+                    $student['city'],
+                    $student['state'],
+                    $student['postal_code'],
+                    $student['country'],
+                ], static fn (?string $value): bool => $value !== null && $value !== '')) ?: 'Not provided'); ?></dd></div>
             </dl>
         </article>
     </div>

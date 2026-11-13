@@ -59,11 +59,43 @@ function render_student_profile_form(
                     </select>
                     <?php if ($errorForField('gender') !== null): ?><small class="students-field-error" id="student-gender-error" role="alert"><?php echo e($errorForField('gender')); ?></small><?php endif; ?>
                 </label>
+                <?php if ($options['extended_profile_available'] ?? false): ?>
+                <label class="students-form-field">
+                    <span>Mobile</span>
+                    <input class="form-control" type="tel" name="mobile" maxlength="20" value="<?php echo e($value('mobile')); ?>" autocomplete="tel"<?php echo $errorForField('mobile') !== null ? ' aria-invalid="true"' : ''; ?>>
+                    <?php if ($errorForField('mobile') !== null): ?><small class="students-field-error" role="alert"><?php echo e($errorForField('mobile')); ?></small><?php endif; ?>
+                </label>
+                <label class="students-form-field">
+                    <span>Email</span>
+                    <input class="form-control" type="email" name="email" maxlength="255" value="<?php echo e($value('email')); ?>" autocomplete="email"<?php echo $errorForField('email') !== null ? ' aria-invalid="true"' : ''; ?>>
+                    <?php if ($errorForField('email') !== null): ?><small class="students-field-error" role="alert"><?php echo e($errorForField('email')); ?></small><?php endif; ?>
+                </label>
+                <?php endif; ?>
                 <label class="students-form-field">
                     <span>Admission date <b aria-hidden="true">*</b></span>
                     <input class="form-control" type="date" name="admission_date" required value="<?php echo e($value('admission_date', date('Y-m-d'))); ?>"<?php echo $errorForField('admission_date') !== null ? ' aria-invalid="true" aria-describedby="admission-date-error"' : ''; ?>>
                     <?php if ($errorForField('admission_date') !== null): ?><small class="students-field-error" id="admission-date-error" role="alert"><?php echo e($errorForField('admission_date')); ?></small><?php endif; ?>
                 </label>
+                <?php if ($options['extended_profile_available'] ?? false): ?>
+                <label class="students-form-field">
+                    <span>Previous school</span>
+                    <input class="form-control" type="text" name="previous_school" maxlength="200" value="<?php echo e($value('previous_school')); ?>">
+                </label>
+                <?php foreach ([
+                    'address_line1' => ['Address line 1', 255],
+                    'address_line2' => ['Address line 2', 255],
+                    'city' => ['City', 120],
+                    'state' => ['State / Province', 120],
+                    'postal_code' => ['Postal code', 20],
+                    'country' => ['Country', 120],
+                ] as $field => [$label, $maxLength]): ?>
+                    <label class="students-form-field">
+                        <span><?php echo e($label); ?></span>
+                        <input class="form-control" type="text" name="<?php echo e($field); ?>" maxlength="<?php echo e((string) $maxLength); ?>" value="<?php echo e($value($field)); ?>"<?php echo $errorForField($field) !== null ? ' aria-invalid="true"' : ''; ?>>
+                        <?php if ($errorForField($field) !== null): ?><small class="students-field-error" role="alert"><?php echo e($errorForField($field)); ?></small><?php endif; ?>
+                    </label>
+                <?php endforeach; ?>
+                <?php endif; ?>
                 <?php if (!$editing): ?>
                     <label class="students-form-field">
                         <span>Initial status</span>
