@@ -18,9 +18,9 @@ $modelStatement->execute();
 $academicModel = $modelStatement->get_result()->fetch_column();
 $modelStatement->close();
 $academicModel = is_string($academicModel) ? $academicModel : 'legacy';
-if ($adminBatchId === null && $academicModel === 'school') {
-    http_response_code(403);
-    exit('School attendance and placement use classes and sections, not new batches.');
+if ($academicModel === 'school') {
+    http_response_code(404);
+    exit('Batch management is unavailable for school institutions. Use classes and sections instead.');
 }
 $user = current_user();
 $batch = $adminBatchId === null ? null : admin_panel_batch($db, $institutionId, $adminBatchId);

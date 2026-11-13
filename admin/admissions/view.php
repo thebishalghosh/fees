@@ -49,6 +49,63 @@ if (!$schemaReady) {
                 'information_requested' => 'information_requested',
                 default => 'under_review',
             };
+            if ($status === 'approved'
+                && user_has_compatible_permission('students.create', 'academics.manage')) {
+                $applicationForApproval = admission_conversion_get($db, $institutionId, $admissionId);
+                if (!is_array($applicationForApproval)) {
+                    throw new OutOfBoundsException('Admission application not found in this institution.');
+                }
+                $approvalPlacementData = admission_conversion_placement_options($db, $institutionId);
+                if ($approvalPlacementData['academic_model'] === 'school') {
+                    $placement = admission_conversion_select_placement(
+                        $applicationForApproval,
+                        $approvalPlacementData['placements'],
+                        $approvalPlacementData['academic_year_id'],
+                        $approvalPlacementData['academic_model']
+                    );
+                    if ($approvalPlacementData['academic_year_id'] === null) {
+                        throw new DomainException('Select an active academic year before approving and enrolling students.');
+                    }
+                    if (!is_array($placement)) {
+                        if ($applicationForApproval['academic_year_id'] !== null
+                            && (int) $applicationForApproval['academic_year_id']
+                                !== (int) $approvalPlacementData['academic_year_id']) {
+                            throw new DomainException('Update the application’s academic year to match the institution’s active year before approving.');
+                        }
+                        throw new DomainException('No active placement matches the application’s academic selection. Update it or add the matching year-specific placement before approving.');
+                    }
+                    $conversion = admission_conversion_convert(
+                        $db,
+                        $institutionId,
+                        (int) $actor['id'],
+                        (string) $actor['user_type'],
+                        $admissionId,
+                        (int) $approvalPlacementData['academic_year_id'],
+                        (int) $placement['id'],
+                        '',
+                        null,
+                        trim($notes)
+                    );
+                    $approvalNotificationResult = admission_workflow_notify_after_commit(
+                        $db,
+                        $institutionId,
+                        $admissionId,
+                        'application_approved'
+                    );
+                    $registrationNotificationResult = admission_workflow_notify_after_commit(
+                        $db,
+                        $institutionId,
+                        $admissionId,
+                        'student_registered'
+                    );
+                    $notificationFailed = $approvalNotificationResult === false
+                        || $registrationNotificationResult === false;
+                    set_flash($notificationFailed ? 'warning' : 'success', $notificationFailed
+                        ? 'Student enrolled successfully with ID ' . $conversion['student_code'] . ', but one or more email notifications could not be delivered.'
+                        : 'Student enrolled successfully. Student ID: ' . $conversion['student_code'] . '.');
+                    safe_redirect('/admin/admissions/view?id=' . $admissionId, 303);
+                }
+            }
             admission_conversion_set_status(
                 $db,
                 $institutionId,
@@ -138,9 +195,39 @@ $placementData = $schemaReady ? admission_conversion_placement_options($db, $ins
     'years' => [],
     'placements' => [],
 ];
+$matchingPlacements = is_array($application)
+    ? admission_conversion_matching_placements(
+        $application,
+        $placementData['placements'],
+        $placementData['academic_year_id'],
+        $placementData['academic_model']
+    )
+    : [];
+$selectedPlacementId = null;
+if (is_array($application) && $application['requested_academic_group_id'] !== null) {
+    foreach ($matchingPlacements as $placement) {
+        if ((int) $placement['id'] === (int) $application['requested_academic_group_id']) {
+            $selectedPlacementId = (int) $placement['id'];
+            break;
+        }
+    }
+}
+if ($selectedPlacementId === null && count($matchingPlacements) === 1) {
+    $selectedPlacementId = (int) $matchingPlacements[0]['id'];
+}
 $documents = $schemaReady ? admission_workflow_list_documents($db, $institutionId, $admissionId) : [];
 $canConvert = user_has_compatible_permission('admissions.approve', 'admissions.manage')
     && user_has_compatible_permission('students.create', 'academics.manage');
+$autoEnrollmentPlacement = is_array($application)
+    && $placementData['academic_model'] === 'school'
+    ? admission_conversion_select_placement(
+        $application,
+        $placementData['placements'],
+        $placementData['academic_year_id'],
+        $placementData['academic_model']
+    )
+    : null;
+$autoEnrollmentOnApproval = $canConvert && $placementData['academic_model'] === 'school';
 
 render_app_page_start(
     'Review Admission',
@@ -189,6 +276,15 @@ render_app_page_start(
     <?php if (in_array($application['status'], ['submitted', 'under_review', 'information_requested'], true)): ?>
         <section class="dashboard-panel mb-4">
             <h2 class="h5">Review decision</h2>
+            <?php if ($autoEnrollmentOnApproval): ?>
+                <?php if (is_array($autoEnrollmentPlacement)): ?>
+                    <p class="alert alert-info">Approving this application will create the student and enrol them in <strong><?php echo e($autoEnrollmentPlacement['label']); ?></strong>.</p>
+                <?php elseif ($placementData['academic_year_id'] === null): ?>
+                    <p class="alert alert-warning">Set an active academic year and placement before approving. Student enrolment will be created automatically after approval.</p>
+                <?php else: ?>
+                    <p class="alert alert-warning">No active placement matches this application. Update its academic selection or add the matching year-specific placement before approving.</p>
+                <?php endif; ?>
+            <?php endif; ?>
             <form method="post" action="<?php echo e(route_url('/admin/admissions/view?id=' . $admissionId)); ?>">
                 <?php echo csrf_field(); ?>
                 <label class="form-label" for="review-notes">Review notes</label>
@@ -196,14 +292,14 @@ render_app_page_start(
                 <div class="d-flex flex-wrap gap-2">
                     <?php if (user_has_compatible_permission('admissions.edit', 'admissions.manage')): ?><button class="btn btn-outline-primary" name="action" value="under_review">Mark under review</button><?php endif; ?>
                     <?php if (user_has_compatible_permission('admissions.edit', 'admissions.manage')): ?><button class="btn btn-outline-warning" name="action" value="information_requested" onclick="return confirm('Request additional information from the applicant?')">Request information</button><?php endif; ?>
-                    <?php if (user_has_compatible_permission('admissions.approve', 'admissions.manage')): ?><button class="btn btn-success" name="action" value="approve" onclick="return confirm('Approve this admission application?')">Approve</button><?php endif; ?>
+                    <?php if (user_has_compatible_permission('admissions.approve', 'admissions.manage')): ?><button class="btn btn-success" name="action" value="approve" <?php echo $autoEnrollmentOnApproval && !is_array($autoEnrollmentPlacement) ? 'disabled' : ''; ?> onclick="return confirm('<?php echo $autoEnrollmentOnApproval ? 'Approve this application and automatically enrol the student?' : 'Approve this admission application?'; ?>')"><?php echo $autoEnrollmentOnApproval ? 'Approve & enrol' : 'Approve'; ?></button><?php endif; ?>
                     <?php if (user_has_compatible_permission('admissions.reject', 'admissions.manage')): ?><button class="btn btn-outline-danger" name="action" value="reject" onclick="return confirm('Reject this admission application?')">Reject</button><?php endif; ?>
                 </div>
             </form>
         </section>
     <?php endif; ?>
 
-    <?php if (in_array($application['status'], ['draft', 'information_requested'], true)
+    <?php if ($application['status'] !== 'enrolled'
         && user_has_compatible_permission('admissions.edit', 'admissions.manage')): ?>
         <div class="mb-4"><a class="btn btn-outline-primary" href="<?php echo e(route_url('/admin/admissions/edit?id=' . $admissionId)); ?>">Edit application</a></div>
     <?php endif; ?>
@@ -283,18 +379,31 @@ render_app_page_start(
             <h2 class="h5">Convert to student enrolment</h2>
             <?php if ($placementData['academic_year_id'] === null): ?>
                 <p>Select an active academic year in Academic Years before converting applications.</p>
-            <?php elseif ($placementData['placements'] === []): ?>
-                <p>Add valid year-specific class/section, programme/term, or course/batch placements before converting.</p>
+            <?php elseif ($matchingPlacements === []): ?>
+                <?php if ($application['academic_year_id'] !== null
+                    && (int) $application['academic_year_id'] !== (int) $placementData['academic_year_id']): ?>
+                    <p>The academic year selected on this application is not the institution’s active academic year. Update the application’s academic selection before converting.</p>
+                <?php else: ?>
+                    <p>No active placement matches the academic selection on this application. Update its academic selection or add the matching year-specific placement before converting.</p>
+                <?php endif; ?>
             <?php else: ?>
                 <p>Academic model: <strong><?php echo e(ucfirst((string) $placementData['academic_model'])); ?></strong>.
                     Active year: <strong><?php echo e($placementData['years'][0]['name']); ?></strong>.</p>
+                <?php if ($application['requested_academic_group_id'] !== null
+                    && !in_array(
+                        (int) $application['requested_academic_group_id'],
+                        array_map(static fn (array $placement): int => (int) $placement['id'], $matchingPlacements),
+                        true
+                    )): ?>
+                    <p class="text-muted">The preferred placement is unavailable. Choose an active placement matching the application’s academic selection.</p>
+                <?php endif; ?>
                 <form method="post" action="<?php echo e(route_url('/admin/admissions/view?id=' . $admissionId)); ?>" class="row g-3 align-items-end">
                     <?php echo csrf_field(); ?><input type="hidden" name="action" value="convert">
                     <input type="hidden" name="academic_year_id" value="<?php echo e((string) $placementData['academic_year_id']); ?>">
                     <label class="col-md-6">Academic placement
                         <select class="form-select" name="academic_group_id" required>
                             <option value="">Select a placement</option>
-                            <?php foreach ($placementData['placements'] as $placement): ?><option value="<?php echo e((string) $placement['id']); ?>"><?php echo e($placement['label']); ?></option><?php endforeach; ?>
+                            <?php foreach ($matchingPlacements as $placement): ?><option value="<?php echo e((string) $placement['id']); ?>"<?php echo $selectedPlacementId === (int) $placement['id'] ? ' selected' : ''; ?>><?php echo e($placement['label']); ?></option><?php endforeach; ?>
                         </select>
                     </label>
                     <div class="col-md-4"><span class="form-label d-block">Student ID</span><span class="text-muted">Generated automatically from the institution prefix and academic year.</span></div>

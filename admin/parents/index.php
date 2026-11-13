@@ -23,6 +23,7 @@ if (!in_array($link, ['', 'linked', 'unlinked'], true)) {
 }
 $requestedPage = filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT);
 $page = $requestedPage === false || $requestedPage < 1 ? 1 : $requestedPage;
+$isSuperAdmin = parent_management_is_super_admin();
 $summary = parent_management_get_summary($db, $institutionId);
 $result = parent_management_list($db, $institutionId, $search, $status, $link, $page);
 $canCreate = user_has_compatible_permission('parents.create', 'parents.manage');
@@ -75,9 +76,9 @@ render_app_page_start(
         <div>
             <div class="parents-title-row">
                 <h2 id="parents-list-title">Parent Directory</h2>
-                <span class="parents-live-banner"><i class="bi bi-database-check" aria-hidden="true"></i><?php echo $isSuperAdmin ? ' All institutions' : ' Live institution data'; ?></span>
+                <span class="parents-live-banner"><i class="bi bi-database-check" aria-hidden="true"></i><?php echo $isSuperAdmin ? ' Selected institution' : ' Live institution data'; ?></span>
             </div>
-            <p><?php echo $isSuperAdmin ? 'Parent accounts and active student links across all institutions.' : 'Parent accounts and active student links for your institution.'; ?></p>
+            <p><?php echo $isSuperAdmin ? 'Parent accounts and active student links for the selected institution.' : 'Parent accounts and active student links for your institution.'; ?></p>
         </div>
         <span class="parents-result-count" aria-live="polite"><strong><?php echo e(number_format($result['total'])); ?></strong> records</span>
     </div>

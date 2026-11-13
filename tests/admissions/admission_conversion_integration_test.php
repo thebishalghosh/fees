@@ -283,6 +283,68 @@ try {
             && (int) $fetchValue('SELECT COUNT(*) FROM parent_student_relationships WHERE institution_id = ? AND student_id = ? AND parent_id = ? AND status = \'active\'', 'iii', $institutionA, $converted['student_id'], $parentIds[0]) === 1,
         'Create a student, enrolment, placement, and parent link in one conversion'
     );
+    $autoAdmissionId = $insertId(
+        'INSERT INTO admissions
+            (institution_id, applicant_name, applicant_mobile, relationship_to_student,
+             student_name, academic_year_id, class_id, requested_academic_group_id, status)
+         VALUES (?, \'Auto Applicant\', ?, \'guardian\', \'Auto Student\', ?, ?, ?, \'submitted\')',
+        'isiii',
+        $institutionA,
+        $applicantMobileB,
+        $yearA,
+        $classA,
+        $groupA
+    );
+    $autoConverted = admission_conversion_convert(
+        $db,
+        $institutionA,
+        $actorId,
+        'admin',
+        $autoAdmissionId,
+        $yearA,
+        $groupA,
+        '',
+        null,
+        'Application reviewed and approved.'
+    );
+    $check(
+        $fetchValue('SELECT status FROM admissions WHERE institution_id = ? AND id = ?', 'ii', $institutionA, $autoAdmissionId) === 'enrolled'
+            && (int) $fetchValue('SELECT approved_by FROM admissions WHERE institution_id = ? AND id = ?', 'ii', $institutionA, $autoAdmissionId) === $actorId
+            && $fetchValue('SELECT review_notes FROM admissions WHERE institution_id = ? AND id = ?', 'ii', $institutionA, $autoAdmissionId) === 'Application reviewed and approved.'
+            && (int) $fetchValue(
+                'SELECT COUNT(*) FROM admission_status_history
+                 WHERE institution_id = ? AND admission_id = ? AND event_type IN (\'approved\', \'student_registered\')',
+                'ii',
+                $institutionA,
+                $autoAdmissionId
+            ) === 2
+            && (int) $fetchValue('SELECT COUNT(*) FROM student_enrolments WHERE institution_id = ? AND id = ?', 'ii', $institutionA, $autoConverted['student_enrolment_id']) === 1,
+        'Approve and enrol a school admission atomically with a single operation'
+    );
+    $bulkAdmissionId = $insertId(
+        'INSERT INTO admissions
+            (institution_id, applicant_name, applicant_mobile, relationship_to_student,
+             student_name, academic_year_id, class_id, status)
+         VALUES (?, \'Bulk Applicant\', ?, \'guardian\', \'Bulk Student\', ?, ?, \'approved\')',
+        'isii',
+        $institutionA,
+        $applicantMobileB,
+        $yearA,
+        $classA
+    );
+    $bulkResults = admission_conversion_complete_approved_school_applications(
+        $db,
+        $institutionA,
+        $actorId,
+        'admin'
+    );
+    $check(
+        count($bulkResults['enrolled']) === 1
+            && (int) $bulkResults['enrolled'][0]['admission_id'] === $bulkAdmissionId
+            && $bulkResults['skipped'] === []
+            && $fetchValue('SELECT status FROM admissions WHERE institution_id = ? AND id = ?', 'ii', $institutionA, $bulkAdmissionId) === 'enrolled',
+        'Complete eligible previously approved school admissions'
+    );
     academic_management_update_section(
         $db,
         $institutionA,

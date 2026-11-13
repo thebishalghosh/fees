@@ -387,11 +387,20 @@ $check(
     'Make institution-scoped new classes available in the existing batch form'
 );
 $check(
-    str_contains($adminPanelService, "if (\$academicModel === 'school')")
+    str_contains($adminPanelService, 'function admin_panel_course_module_enabled')
+        && str_contains($adminPanelService, 'function admin_panel_require_course_module_enabled')
+        && str_contains($adminPanelService, 'admin_panel_require_course_module_enabled($db, $institutionId)')
         && str_contains($adminPanelService, "in_array(\$academicModel, ['college', 'university'], true)")
-        && str_contains($adminPanelService, 'academic administration uses classes and sections instead of courses')
         && str_contains($adminPanelService, 'placement uses academic terms instead of batches'),
-    'Enforce model-specific restrictions on direct course and batch writes'
+    'Enforce school course and batch restrictions in backend services'
+);
+$check(
+    str_contains($adminList, "in_array(\$adminListTable, ['courses', 'batches'], true)")
+        && str_contains($courseForm, 'admin_panel_course_module_enabled($db, $institutionId)')
+        && str_contains($batchForm, "if (\$academicModel === 'school')")
+        && str_contains($sidebarLayout, "if (\$context === 'admin')")
+        && str_contains($feeStructureForm, "admin_panel_simple_list(\$db, \$institutionId, 'courses')"),
+    'Disable course and batch screens for school institutions, including direct route access'
 );
 $check(
     is_string($sidebarLayout)
@@ -437,7 +446,7 @@ $check(
         && str_contains($academicManagementService, 'academic_management_institution_options')
         && str_contains($adminPanelService, 'function admin_panel_update_class')
         && str_contains($academicManagementService, 'function academic_management_update_section')
-        && str_contains($sidebarLayout, "!== 'super_admin'")
+        && str_contains($sidebarLayout, "=== 'super_admin'")
         && str_contains($sidebarLayout, "\$href === '/admin/academics/classes'")
         && is_string($authRoutes)
         && str_contains($authRoutes, "'academics/classes.php', 'academics/create-class.php'"),

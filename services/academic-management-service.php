@@ -989,7 +989,8 @@ function academic_management_list_placement_options(mysqli $db, int $institution
     }
     $model = $configuration['academic_model'];
     $query = match ($model) {
-        'school' => "SELECT g.id, CONCAT(ay.name, ' / ', c.name, ' / ', s.name) AS label
+        'school' => "SELECT g.id, g.course_id, g.class_id, g.batch_id,
+                CONCAT(ay.name, ' / ', c.name, ' / ', s.name) AS label
             FROM academic_groups g
             JOIN academic_years ay ON ay.institution_id = g.institution_id AND ay.id = g.academic_year_id
             JOIN sections s ON s.institution_id = g.institution_id AND s.academic_year_id = g.academic_year_id
@@ -998,7 +999,8 @@ function academic_management_list_placement_options(mysqli $db, int $institution
             WHERE g.institution_id = ? AND g.academic_year_id = ? AND g.group_type = 'section'
               AND c.status = 'active' AND s.status = 'active'
             ORDER BY c.name, s.name",
-        'college', 'university' => "SELECT g.id, CONCAT(ay.name, ' / ', c.name, ' / ', t.name) AS label
+        'college', 'university' => "SELECT g.id, g.course_id, g.class_id, g.batch_id,
+                CONCAT(ay.name, ' / ', c.name, ' / ', t.name) AS label
             FROM academic_groups g
             JOIN academic_years ay ON ay.institution_id = g.institution_id AND ay.id = g.academic_year_id
             JOIN courses c ON c.institution_id = g.institution_id AND c.id = g.course_id
@@ -1007,7 +1009,8 @@ function academic_management_list_placement_options(mysqli $db, int $institution
               AND t.id = g.academic_term_id
             WHERE g.institution_id = ? AND g.academic_year_id = ? AND g.group_type = 'term'
             ORDER BY c.name, t.sequence_number",
-        'coaching' => "SELECT g.id, CONCAT(ay.name, ' / ', c.name, ' / ', b.name) AS label
+        'coaching' => "SELECT g.id, g.course_id, g.class_id, g.batch_id,
+                CONCAT(ay.name, ' / ', c.name, ' / ', b.name) AS label
             FROM academic_groups g
             JOIN academic_years ay ON ay.institution_id = g.institution_id AND ay.id = g.academic_year_id
             JOIN courses c ON c.institution_id = g.institution_id AND c.id = g.course_id

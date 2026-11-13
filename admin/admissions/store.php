@@ -31,11 +31,16 @@ $action = $_POST['action'] ?? null;
 $targetStatus = match ($action) {
     'save_draft' => 'draft',
     'submit_application' => 'submitted',
+    'save_changes' => 'save_changes',
     default => null,
 };
 if ($targetStatus === null) {
     http_response_code(400);
-    exit('Choose save draft or submit application.');
+    exit('Choose save draft, submit application, or save changes.');
+}
+if ($targetStatus === 'save_changes' && $admissionId === null) {
+    http_response_code(400);
+    exit('Choose an existing application to update.');
 }
 try {
     $db = db_connect();

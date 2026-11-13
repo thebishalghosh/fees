@@ -27,10 +27,11 @@ if ($application === null) {
     http_response_code(404);
     exit('Admission application not found.');
 }
-if (!in_array($application['status'], ['draft', 'information_requested'], true)) {
+if ($application['status'] === 'enrolled') {
     http_response_code(409);
-    exit('Only draft or information-requested applications can be edited.');
+    exit('Enrolled applications cannot be edited.');
 }
+$preserveStatus = !in_array($application['status'], ['draft', 'information_requested'], true);
 $options = admission_workflow_options($db, $institutionId);
 $groups = admission_workflow_group_options($db, $institutionId);
 $old = $_SESSION['admission_workflow_old'] ?? [];
@@ -45,6 +46,6 @@ render_app_page_start('Edit Admission Application', 'Update the application befo
 <nav aria-label="Breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="<?php echo e(route_url('/admin/dashboard')); ?>">Dashboard</a></li><li class="breadcrumb-item"><a href="<?php echo e(route_url('/admin/admissions/index')); ?>">Admissions</a></li><li class="breadcrumb-item active" aria-current="page"><?php echo e($application['application_reference'] ?? ('Application #' . $admissionId)); ?></li></ol></nav>
 <section class="dashboard-panel">
     <div class="d-flex justify-content-between align-items-start"><div><p class="text-muted mb-1">Reference <?php echo e($application['application_reference'] ?? 'Pending reference'); ?></p><h2 class="h4">Application details</h2></div><span class="badge text-bg-warning"><?php echo e(ucwords(str_replace('_', ' ', $application['status']))); ?></span></div>
-    <?php render_admission_application_form($application, $options, $groups, true); ?>
+    <?php render_admission_application_form($application, $options, $groups, true, $preserveStatus); ?>
 </section>
 <?php render_app_page_end('admin'); ?>

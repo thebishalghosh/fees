@@ -24,6 +24,7 @@ const ADMISSION_NOTIFICATION_EVENTS = [
 const ADMISSION_HISTORY_EVENTS = [
     'created',
     'draft_updated',
+    'details_updated',
     'submitted',
     'under_review',
     'information_requested',
@@ -132,8 +133,8 @@ function admission_workflow_optional_id(mixed $value, string $label): ?int
 
 function admission_workflow_validate_application(array $input, string $targetStatus): array
 {
-    if (!in_array($targetStatus, ['draft', 'submitted'], true)) {
-        throw new InvalidArgumentException('Choose whether to save the draft or submit the application.');
+    if (!in_array($targetStatus, ['draft', 'submitted', 'save_changes'], true)) {
+        throw new InvalidArgumentException('Choose whether to save the draft, submit, or save changes.');
     }
     $fields = [
         'applicant_name' => [150, true],
@@ -362,6 +363,9 @@ function admission_workflow_save_application(
     ?int $admissionId = null
 ): int {
     $data = admission_workflow_validate_application($input, $targetStatus);
+    if ($admissionId === null && $targetStatus === 'save_changes') {
+        throw new InvalidArgumentException('Choose an existing application to update.');
+    }
     if ($targetStatus === 'submitted') {
         $data['submitted_at'] = date('Y-m-d H:i:s');
     }
@@ -459,7 +463,14 @@ function admission_workflow_save_application(
             if (!is_array($current)) {
                 throw new OutOfBoundsException('Admission application not found in this institution.');
             }
-            if (!in_array($current['status'], ['draft', 'information_requested'], true)) {
+            if ($targetStatus === 'save_changes'
+                && (!in_array($current['status'], ADMISSION_WORKFLOW_STATUSES, true)
+                    || $current['status'] === 'enrolled')) {
+                throw new DomainException('Enrolled or invalid applications cannot be edited.');
+            }
+            $canSaveChanges = $targetStatus === 'save_changes'
+                && in_array($current['status'], ADMISSION_WORKFLOW_STATUSES, true);
+            if (!$canSaveChanges && !in_array($current['status'], ['draft', 'information_requested'], true)) {
                 throw new DomainException('Only draft or information-requested applications can be edited.');
             }
             $fromStatus = (string) $current['status'];
@@ -473,6 +484,9 @@ function admission_workflow_save_application(
                 'academic_year_id', 'requested_academic_group_id', 'course_id', 'class_id', 'batch_id',
                 'status', 'submission_notes', 'submitted_at',
             ];
+            if ($targetStatus === 'save_changes') {
+                $columns = array_values(array_diff($columns, ['status', 'submitted_at']));
+            }
             $assignments = implode(', ', array_map(static fn (string $column): string => $column . ' = ?', $columns));
             $types = '';
             $values = [];
@@ -517,16 +531,22 @@ function admission_workflow_save_application(
                 );
             }
         } else {
-            $eventType = $targetStatus === 'submitted' ? 'submitted' : 'draft_updated';
-            $remarks = $targetStatus === 'submitted'
-                ? 'Application submitted.'
-                : 'Application draft updated.';
+            $eventType = match ($targetStatus) {
+                'submitted' => 'submitted',
+                'save_changes' => 'details_updated',
+                default => 'draft_updated',
+            };
+            $remarks = match ($targetStatus) {
+                'submitted' => 'Application submitted.',
+                'save_changes' => 'Application details updated.',
+                default => 'Application draft updated.',
+            };
             admission_workflow_record_status(
                 $db,
                 $institutionId,
                 $admissionId,
                 $fromStatus,
-                $targetStatus,
+                $targetStatus === 'save_changes' ? $fromStatus : $targetStatus,
                 $remarks,
                 $databaseActorId,
                 $eventType
@@ -537,11 +557,15 @@ function admission_workflow_save_application(
             $institutionId,
             $actorUserId,
             $actorType,
-            $targetStatus === 'submitted' ? 'admission.submitted' : 'admission.draft_saved',
+            match ($targetStatus) {
+                'submitted' => 'admission.submitted',
+                'save_changes' => 'admission.updated',
+                default => 'admission.draft_saved',
+            },
             'admission',
             (string) $admissionId,
             $fromStatus === null ? null : ['status' => $fromStatus],
-            ['status' => $targetStatus]
+            ['status' => $targetStatus === 'save_changes' ? $fromStatus : $targetStatus]
         );
         $db->commit();
         return $admissionId;

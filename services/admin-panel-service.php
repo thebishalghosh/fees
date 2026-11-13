@@ -28,6 +28,39 @@ function admin_panel_institution_id(): int
     return $institutionId;
 }
 
+function admin_panel_course_module_enabled(mysqli $db, int $institutionId): bool
+{
+    $columnStatement = $db->prepare(
+        "SELECT COUNT(*) FROM information_schema.columns
+         WHERE table_schema = DATABASE()
+           AND table_name = 'institutions' AND column_name = 'academic_model'"
+    );
+    $columnStatement->execute();
+    $hasAcademicModel = (int) $columnStatement->get_result()->fetch_column() > 0;
+    $columnStatement->close();
+    if (!$hasAcademicModel) {
+        return true;
+    }
+
+    $statement = $db->prepare('SELECT academic_model FROM institutions WHERE id = ? LIMIT 1');
+    $statement->bind_param('i', $institutionId);
+    $statement->execute();
+    $academicModel = $statement->get_result()->fetch_column();
+    $statement->close();
+    if ($academicModel === false) {
+        throw new OutOfBoundsException('The institution was not found.');
+    }
+
+    return $academicModel !== 'school';
+}
+
+function admin_panel_require_course_module_enabled(mysqli $db, int $institutionId): void
+{
+    if (!admin_panel_course_module_enabled($db, $institutionId)) {
+        throw new DomainException('Course management is unavailable for school institutions.');
+    }
+}
+
 function admin_panel_institution_options(mysqli $db): array
 {
     $result = $db->query(
@@ -1174,17 +1207,10 @@ function admin_panel_save_course(
     array $values,
     ?int $courseId = null
 ): int {
+    admin_panel_require_course_module_enabled($db, $institutionId);
     $before = $courseId === null ? null : admin_panel_course($db, $institutionId, $courseId);
     if ($courseId !== null && $before === null) {
         throw new OutOfBoundsException('Course not found.');
-    }
-    $modelStatement = $db->prepare('SELECT academic_model FROM institutions WHERE id = ?');
-    $modelStatement->bind_param('i', $institutionId);
-    $modelStatement->execute();
-    $academicModel = $modelStatement->get_result()->fetch_column();
-    $modelStatement->close();
-    if ($academicModel === 'school') {
-        throw new DomainException('School academic administration uses classes and sections instead of courses.');
     }
     $db->begin_transaction();
     try {
@@ -1243,6 +1269,7 @@ function admin_panel_save_course(
 
 function admin_panel_course(mysqli $db, int $institutionId, int $courseId): ?array
 {
+    admin_panel_require_course_module_enabled($db, $institutionId);
     $statement = $db->prepare(
         'SELECT id, name, code, description, duration_months, status
          FROM courses WHERE institution_id = ? AND id = ? LIMIT 1'
@@ -1314,6 +1341,7 @@ function admin_panel_validate_batch(array $input, string $academicModel = 'legac
 
 function admin_panel_batch(mysqli $db, int $institutionId, int $batchId): ?array
 {
+    admin_panel_require_course_module_enabled($db, $institutionId);
     $statement = $db->prepare(
         'SELECT id, name, code, course_id, class_id, start_time, end_time, capacity, status
          FROM batches WHERE institution_id = ? AND id = ? LIMIT 1'

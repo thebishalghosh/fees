@@ -5,7 +5,8 @@ function render_admission_application_form(
     array $application,
     array $options,
     array $groups,
-    bool $editing
+    bool $editing,
+    bool $preserveStatus = false
 ): void {
     $values = $application;
     $studentName = trim((string) ($application['student_name'] ?? ''));
@@ -110,8 +111,13 @@ function render_admission_application_form(
             </div>
         </section>
         <div class="col-12 d-flex flex-wrap gap-2">
-            <button class="btn btn-outline-secondary" type="submit" name="action" value="save_draft">Save draft</button>
-            <button class="btn btn-primary" type="submit" name="action" value="submit_application" onclick="return confirm('Submit this application for review? You will not be able to edit it unless more information is requested.')">Submit application</button>
+            <?php if ($preserveStatus): ?>
+                <button class="btn btn-primary" type="submit" name="action" value="save_changes">Save changes</button>
+                <span class="align-self-center text-muted">The application status will remain unchanged.</span>
+            <?php else: ?>
+                <button class="btn btn-outline-secondary" type="submit" name="action" value="save_draft">Save draft</button>
+                <button class="btn btn-primary" type="submit" name="action" value="submit_application" onclick="return confirm('Submit this application for review? You will not be able to edit it unless more information is requested.')">Submit application</button>
+            <?php endif; ?>
             <a class="btn btn-link" href="<?php echo e(route_url('/admin/admissions/index')); ?>">Cancel</a>
         </div>
     </form>

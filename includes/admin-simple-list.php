@@ -13,7 +13,14 @@ if (!isset($adminListTable, $adminListTitle, $adminListDescription)
 
 require_http_methods(['GET', 'HEAD']);
 require_placeholder_route_access();
-$rows = admin_panel_simple_list(db_connect(), admin_panel_institution_id(), $adminListTable);
+$db = db_connect();
+$institutionId = admin_panel_institution_id();
+if (in_array($adminListTable, ['courses', 'batches'], true)
+    && !admin_panel_course_module_enabled($db, $institutionId)) {
+    http_response_code(404);
+    exit('Course and batch management is unavailable for school institutions. Use classes and sections instead.');
+}
+$rows = admin_panel_simple_list($db, $institutionId, $adminListTable);
 
 render_app_page_start($adminListTitle, $adminListDescription, 'admin', ['admin-dashboard.css']);
 ?>

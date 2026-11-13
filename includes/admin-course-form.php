@@ -12,6 +12,10 @@ require_http_methods(['GET', 'POST']);
 require_placeholder_route_access();
 $db = db_connect();
 $institutionId = admin_panel_institution_id();
+if (!admin_panel_course_module_enabled($db, $institutionId)) {
+    http_response_code(404);
+    exit('Course management is unavailable for school institutions. Use classes and sections instead.');
+}
 $user = current_user();
 $course = $adminCourseId === null ? null : admin_panel_course($db, $institutionId, $adminCourseId);
 if ($adminCourseId !== null && $course === null) {

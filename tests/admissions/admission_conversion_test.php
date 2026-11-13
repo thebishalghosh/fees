@@ -12,18 +12,19 @@ $check = static function (bool $condition, string $label) use (&$checks, &$failu
 
 $service = file_get_contents(__DIR__ . '/../../services/admission-conversion-service.php');
 $view = file_get_contents(__DIR__ . '/../../admin/admissions/view.php');
+$enrolments = file_get_contents(__DIR__ . '/../../admin/academics/enrolments.php');
 $list = file_get_contents(__DIR__ . '/../../admin/admissions/index.php');
 $auth = file_get_contents(__DIR__ . '/../../includes/auth.php');
 $sidebar = file_get_contents(__DIR__ . '/../../includes/layouts/sidebar.php');
 $schema = file_get_contents(__DIR__ . '/../../database/schema.sql');
 $migration = file_get_contents(__DIR__ . '/../../database/migrations/20261104_add_admission_enrolment_conversion.sql');
 $check(
-    is_string($service) && is_string($view) && is_string($list) && is_string($auth)
+    is_string($service) && is_string($view) && is_string($enrolments) && is_string($list) && is_string($auth)
         && is_string($sidebar) && is_string($schema) && is_string($migration),
     'Read admission service, UI, routing, and schema sources'
 );
 
-if (is_string($service) && is_string($view) && is_string($list) && is_string($auth)
+if (is_string($service) && is_string($view) && is_string($enrolments) && is_string($list) && is_string($auth)
     && is_string($sidebar) && is_string($schema) && is_string($migration)) {
     $check(
         str_contains($service, 'begin_transaction()')
@@ -36,7 +37,7 @@ if (is_string($service) && is_string($view) && is_string($list) && is_string($au
     );
     $check(
         str_contains($service, "bind_param('ssisii'")
-            && str_contains($service, "'iiiiiiiiisii'")
+            && str_contains($service, "'iiiiiiiiiisii'")
             && str_contains($service, "status = \\'approved\\'")
             && str_contains($service, 'student_enrolment_id IS NULL')
             && str_contains($service, 'write_audit_log(')
@@ -49,10 +50,22 @@ if (is_string($service) && is_string($view) && is_string($list) && is_string($au
             && str_contains($view, "'admissions.approve'")
             && str_contains($view, "'students.create'")
             && str_contains($view, 'academic_group_id')
+            && str_contains($view, 'admission_conversion_select_placement')
+            && str_contains($view, 'Approve & enrol')
             && str_contains($view, 'Open student')
             && str_contains($view, 'Database update required')
             && str_contains($list, 'admission_conversion_list('),
         'Protect admission review and conversion actions and link migrated schema guidance'
+    );
+    $check(
+        str_contains($service, '?string $approvalNotes = null')
+            && str_contains($service, 'Only submitted or under-review applications can be approved and enrolled.')
+            && str_contains($service, 'function admission_conversion_complete_approved_school_applications')
+            && str_contains($enrolments, 'School enrolments are created automatically when an admission is approved.')
+            && str_contains($enrolments, 'No separate enrolment step is needed.')
+            && str_contains($enrolments, 'complete_existing_admissions')
+            && str_contains($auth, "'complete_existing_admissions' => ['admissions.approve', 'admissions.manage']"),
+        'Automate school approvals and provide a permission-checked completion action for existing admissions'
     );
     $check(
         str_contains($auth, "'convert' => ['admissions.approve', 'admissions.manage']")

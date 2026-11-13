@@ -163,7 +163,7 @@ render_app_page_start(
                             'under_review', 'information_requested' => 'warning', 'submitted' => 'info',
                             default => 'secondary',
                         }); ?>"><?php echo e(ucwords(str_replace('_', ' ', (string) $application['status']))); ?></span></td>
-                        <td><a class="btn btn-sm btn-outline-primary" href="<?php echo e(route_url('/admin/admissions/view?id=' . (int) $application['id'])); ?>"><?php echo in_array($application['status'], ['draft','information_requested'], true) && $canEdit ? 'Edit' : 'Review'; ?></a></td>
+                        <td><a class="btn btn-sm btn-outline-primary" href="<?php echo e(route_url('/admin/admissions/view?id=' . (int) $application['id'])); ?>"><?php echo $application['status'] !== 'enrolled' && $canEdit ? 'Edit' : 'Review'; ?></a></td>
                     </tr>
                 <?php endforeach; ?></tbody>
             </table></div>

@@ -177,7 +177,7 @@ function revalidate_authenticated_session(): bool
             (int) $record['role_is_active'] === 1
         )
         || !in_array($record['user_type'], ['super_admin', 'admin', 'staff', 'parent'], true)
-        || (int) $record['idle_seconds'] > $idleTimeout) {
+        || ($idleTimeout > 0 && (int) $record['idle_seconds'] > $idleTimeout)) {
         return false;
     }
 
@@ -707,9 +707,11 @@ function admin_route_permissions(string $relativePath, string $section, string $
             return ['academic_years.edit', 'academics.manage'];
         }
         if ($action === 'enrolments' && $method === 'POST') {
-            return (($_POST['action'] ?? null) === 'enrol')
-                ? ['students.create', 'academics.manage']
-                : ['students.edit', 'academics.manage'];
+            return match ($_POST['action'] ?? null) {
+                'enrol' => ['students.create', 'academics.manage'],
+                'complete_existing_admissions' => ['admissions.approve', 'admissions.manage'],
+                default => ['students.edit', 'academics.manage'],
+            };
         }
         if ($action === 'years' && $method === 'POST') {
             return (($_POST['action'] ?? null) === 'create')

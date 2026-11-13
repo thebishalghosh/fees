@@ -60,6 +60,8 @@ function app_config(): array
     $timezone = (string) ($combined['APP_TIMEZONE'] ?? 'Asia/Kolkata');
     $baseUrl = trim((string) ($combined['APP_URL'] ?? 'http://localhost/fees'));
     $parsedBaseUrl = filter_var($baseUrl, FILTER_VALIDATE_URL) !== false ? parse_url($baseUrl) : false;
+    $isLocalDevelopment = $environment === 'development'
+        && in_array(strtolower((string) ($parsedBaseUrl['host'] ?? '')), ['localhost', '127.0.0.1', '::1'], true);
 
     $resolvedConfig = [
         'app_name' => $combined['APP_NAME'] ?? 'Fees Management System',
@@ -77,7 +79,7 @@ function app_config(): array
             'otp_request_window_seconds' => 900,
             'otp_verify_limit' => 20,
             'otp_verify_window_seconds' => 900,
-            'session_idle_timeout_seconds' => 1800,
+            'session_idle_timeout_seconds' => $isLocalDevelopment ? 0 : 1800,
             'session_absolute_timeout_seconds' => 28800,
         ],
         'mail' => [

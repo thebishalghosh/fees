@@ -112,6 +112,16 @@ if ($allSourcesReadable) {
         && str_contains($serviceSource, 'admin_selected_institution_id()'), 'Resolve Super Admin parent rows only within the selected institution');
     $check(str_contains($indexSource, 'parent_management_list($db, $institutionId')
         && str_contains($indexSource, 'parent_management_get_summary($db, $institutionId)'), 'Keep parent listings and summaries scoped to the selected institution');
+    $summaryStart = strpos($serviceSource, 'function parent_management_get_summary(');
+    $summaryEnd = strpos($serviceSource, 'function parent_management_list(', $summaryStart);
+    $summarySource = $summaryStart !== false && $summaryEnd !== false
+        ? substr($serviceSource, $summaryStart, $summaryEnd - $summaryStart)
+        : '';
+    $check(str_contains($summarySource, 'AND p.institution_id = ?')
+        && str_contains($summarySource, "bind_param('i', \$institutionId)")
+        && str_contains($indexSource, '$isSuperAdmin = parent_management_is_super_admin();')
+        && str_contains($indexSource, 'Selected institution'),
+        'Scope parent summary counts and context label to the selected institution');
     $check(str_contains($viewSource, 'parent_management_resolve_parent_institution_id')
         && str_contains($editSource, 'parent_management_resolve_parent_institution_id')
         && str_contains($updatePageSource, 'parent_management_resolve_parent_institution_id')

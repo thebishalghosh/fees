@@ -163,6 +163,169 @@ function admission_conversion_placement_options(mysqli $db, int $institutionId):
     ];
 }
 
+function admission_conversion_placement_matches_application(
+    array $application,
+    array $placement,
+    ?string $academicModel
+): bool {
+    $fields = match ($academicModel) {
+        'school' => ['class_id'],
+        'college', 'university' => ['course_id'],
+        'coaching' => ['course_id', 'batch_id'],
+        default => null,
+    };
+    if ($fields === null) {
+        return false;
+    }
+
+    foreach ($fields as $field) {
+        if ($application[$field] !== null
+            && (int) $application[$field] !== (int) ($placement[$field] ?? 0)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function admission_conversion_matching_placements(
+    array $application,
+    array $placements,
+    ?int $activeYearId,
+    ?string $academicModel
+): array
+{
+    if ($activeYearId === null
+        || $academicModel === null
+        || ($application['academic_year_id'] !== null
+            && (int) $application['academic_year_id'] !== $activeYearId)) {
+        return [];
+    }
+
+    return array_values(array_filter(
+        $placements,
+        static function (array $placement) use ($application, $academicModel): bool {
+            return admission_conversion_placement_matches_application(
+                $application,
+                $placement,
+                $academicModel
+            );
+        }
+    ));
+}
+
+function admission_conversion_select_placement(
+    array $application,
+    array $placements,
+    ?int $activeYearId,
+    ?string $academicModel
+): ?array {
+    $matchingPlacements = admission_conversion_matching_placements(
+        $application,
+        $placements,
+        $activeYearId,
+        $academicModel
+    );
+    if ($matchingPlacements === []) {
+        return null;
+    }
+
+    $preferredGroupId = $application['requested_academic_group_id'] ?? null;
+    if ($preferredGroupId !== null) {
+        foreach ($matchingPlacements as $placement) {
+            if ((int) $placement['id'] === (int) $preferredGroupId) {
+                return $placement;
+            }
+        }
+    }
+
+    return $matchingPlacements[0];
+}
+
+function admission_conversion_complete_approved_school_applications(
+    mysqli $db,
+    int $institutionId,
+    int $actorUserId,
+    string $actorType
+): array {
+    if ($institutionId < 1
+        || ($actorUserId < 1 && current_platform_admin() === null)) {
+        throw new InvalidArgumentException('Choose a valid institution and administrator.');
+    }
+
+    $placementData = admission_conversion_placement_options($db, $institutionId);
+    if ($placementData['academic_model'] !== 'school') {
+        throw new DomainException('Bulk completion is available only for school admissions.');
+    }
+    if ($placementData['academic_year_id'] === null) {
+        throw new DomainException('Select an active academic year before completing existing admissions.');
+    }
+
+    $statement = $db->prepare(
+        "SELECT id FROM admissions
+         WHERE institution_id = ? AND status = 'approved' AND student_enrolment_id IS NULL
+         ORDER BY id"
+    );
+    $statement->bind_param('i', $institutionId);
+    $statement->execute();
+    $admissionIds = $statement->get_result()->fetch_all(MYSQLI_ASSOC);
+    $statement->close();
+
+    $results = ['enrolled' => [], 'skipped' => []];
+    foreach ($admissionIds as $row) {
+        $admissionId = (int) $row['id'];
+        $application = admission_conversion_get($db, $institutionId, $admissionId);
+        if (!is_array($application)
+            || $application['status'] !== 'approved'
+            || $application['student_enrolment_id'] !== null) {
+            $results['skipped'][] = [
+                'admission_id' => $admissionId,
+                'reason' => 'The application changed before it could be processed.',
+            ];
+            continue;
+        }
+
+        $placement = admission_conversion_select_placement(
+            $application,
+            $placementData['placements'],
+            $placementData['academic_year_id'],
+            $placementData['academic_model']
+        );
+        if (!is_array($placement)) {
+            $reason = $application['academic_year_id'] !== null
+                && (int) $application['academic_year_id'] !== (int) $placementData['academic_year_id']
+                ? 'The application academic year does not match the active year.'
+                : 'No active placement matches the application’s academic selection.';
+            $results['skipped'][] = ['admission_id' => $admissionId, 'reason' => $reason];
+            continue;
+        }
+
+        try {
+            $conversion = admission_conversion_convert(
+                $db,
+                $institutionId,
+                $actorUserId,
+                $actorType,
+                $admissionId,
+                (int) $placementData['academic_year_id'],
+                (int) $placement['id'],
+                '',
+                null
+            );
+            $results['enrolled'][] = [
+                'admission_id' => $admissionId,
+                'student_code' => $conversion['student_code'],
+            ];
+        } catch (InvalidArgumentException | DomainException | OutOfBoundsException $exception) {
+            $results['skipped'][] = [
+                'admission_id' => $admissionId,
+                'reason' => $exception->getMessage(),
+            ];
+        }
+    }
+
+    return $results;
+}
+
 function admission_conversion_record_history(
     mysqli $db,
     int $institutionId,
@@ -476,7 +639,8 @@ function admission_conversion_convert(
     int $yearId,
     int $groupId,
     string $studentCode,
-    ?string $admissionNumber
+    ?string $admissionNumber,
+    ?string $approvalNotes = null
 ): array {
     if ($institutionId < 1
         || ($actorUserId < 1 && current_platform_admin() === null)
@@ -489,6 +653,11 @@ function admission_conversion_convert(
         ? null
         : academic_management_text($admissionNumber, 'admission number', 50);
     $studentCode = trim($studentCode);
+    if ($approvalNotes !== null
+        && (mb_strlen($approvalNotes, 'UTF-8') > 20000
+            || preg_match('/[\x00-\x1F\x7F]/', $approvalNotes) === 1)) {
+        throw new InvalidArgumentException('Review notes contain unsupported characters or are too long.');
+    }
     $db->begin_transaction();
     try {
         $statement = $db->prepare(
@@ -508,11 +677,60 @@ function admission_conversion_convert(
         if (!is_array($application)) {
             throw new OutOfBoundsException('Admission application not found in this institution.');
         }
-        if ($application['status'] !== 'approved') {
-            throw new DomainException('Only approved, incomplete admission applications can be converted.');
-        }
         if ($application['student_enrolment_id'] !== null) {
             throw new DomainException('This admission application has already been converted.');
+        }
+        if ($approvalNotes !== null) {
+            if (!in_array($application['status'], ['submitted', 'under_review', 'information_requested'], true)) {
+                throw new DomainException('Only submitted or under-review applications can be approved and enrolled.');
+            }
+            $previousStatus = (string) $application['status'];
+            $approvedStatus = 'approved';
+            $approvedAt = date('Y-m-d H:i:s');
+            $approvedBy = institution_audit_actor_user_id($actorUserId);
+            $statement = $db->prepare(
+                'UPDATE admissions
+                 SET status = ?, review_notes = ?, approved_by = ?, approved_at = ?
+                 WHERE institution_id = ? AND id = ?'
+            );
+            $statement->bind_param(
+                'ssisii',
+                $approvedStatus,
+                $approvalNotes,
+                $approvedBy,
+                $approvedAt,
+                $institutionId,
+                $admissionId
+            );
+            $statement->execute();
+            if ($statement->affected_rows !== 1) {
+                $statement->close();
+                throw new DomainException('This admission application changed during approval; reload and review it.');
+            }
+            $statement->close();
+            admission_conversion_record_history(
+                $db,
+                $institutionId,
+                $admissionId,
+                $previousStatus,
+                $approvedStatus,
+                $approvalNotes,
+                $approvedBy,
+                $approvedStatus
+            );
+            write_audit_log(
+                $db,
+                $institutionId,
+                $actorUserId,
+                $actorType,
+                'admission.approved',
+                'admission',
+                (string) $admissionId,
+                ['status' => $previousStatus],
+                ['status' => $approvedStatus, 'review_notes' => $approvalNotes]
+            );
+        } elseif ($application['status'] !== 'approved') {
+            throw new DomainException('Only approved, incomplete admission applications can be converted.');
         }
 
         $statement = $db->prepare(
@@ -537,15 +755,12 @@ function admission_conversion_convert(
             && (int) $application['academic_year_id'] !== $yearId) {
             throw new DomainException('Choose a placement in the academic year selected on the application.');
         }
-        foreach (['course_id', 'class_id', 'batch_id'] as $placementField) {
-            if ($application[$placementField] !== null
-                && (int) $application[$placementField] !== (int) ($group[$placementField] ?? 0)) {
-                throw new DomainException('Choose a placement matching the academic selection on the application.');
-            }
-        }
-        if ($application['requested_academic_group_id'] !== null
-            && (int) $application['requested_academic_group_id'] !== $groupId) {
-            throw new DomainException('Choose the preferred academic placement recorded on the application.');
+        if (!admission_conversion_placement_matches_application(
+            $application,
+            $group,
+            (string) $year['academic_model']
+        )) {
+            throw new DomainException('Choose a placement matching the academic selection on the application.');
         }
 
         if ($application['student_id'] === null) {

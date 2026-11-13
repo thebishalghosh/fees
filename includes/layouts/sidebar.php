@@ -68,7 +68,7 @@ function render_sidebar_nav(string $context = 'admin'): void
         && !$isPlatformAdmin) {
         $items[] = ['Institutions', '/super-admin/institutions', 'bi-buildings', null, 'Administration'];
     }
-    if ($context === 'admin' && (current_user()['user_type'] ?? null) !== 'super_admin') {
+    if ($context === 'admin') {
         $institutionId = authenticated_institution_id(['super_admin', 'admin', 'staff']);
         if ($institutionId !== null) {
             $db = db_connect();

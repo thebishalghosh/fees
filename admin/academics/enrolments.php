@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../includes/page-placeholder.php';
 require_once __DIR__ . '/../../services/academic-management-service.php';
+require_once __DIR__ . '/../../services/admission-workflow-service.php';
 
 require_http_methods(['GET', 'POST']);
 require_placeholder_route_access();
@@ -19,14 +20,69 @@ if (!academic_management_schema_ready($db)) {
 $user = current_user();
 $errors = [];
 $configuration = academic_management_configuration($db, $institutionId);
+$admissionWorkflowReady = admission_workflow_schema_ready($db);
 $canEnrol = user_has_compatible_permission('students.create', 'academics.manage');
 $canEdit = user_has_compatible_permission('students.edit', 'academics.manage');
+$canCompleteExistingAdmissions = user_has_compatible_permission('admissions.approve', 'admissions.manage')
+    && $canEnrol;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_valid_csrf_token();
     try {
         $action = $_POST['action'] ?? null;
-        if ($action === 'enrol') {
+        if ($action === 'complete_existing_admissions') {
+            if (!$canCompleteExistingAdmissions) {
+                http_response_code(403);
+                exit('Forbidden.');
+            }
+            if (!$admissionWorkflowReady) {
+                throw new DomainException('Apply the admission workflow and conversion database updates before completing existing admissions.');
+            }
+            $results = admission_conversion_complete_approved_school_applications(
+                $db,
+                $institutionId,
+                (int) $user['id'],
+                (string) $user['user_type']
+            );
+            $notificationFailures = [];
+            foreach ($results['enrolled'] as $entry) {
+                if (admission_workflow_notify_after_commit(
+                    $db,
+                    $institutionId,
+                    (int) $entry['admission_id'],
+                    'student_registered'
+                ) === false) {
+                    $notificationFailures[] = (int) $entry['admission_id'];
+                }
+            }
+            $completedCount = count($results['enrolled']);
+            $skippedCount = count($results['skipped']);
+            $message = $completedCount === 0
+                ? 'No eligible approved admissions were enrolled.'
+                : 'Completed enrolment for ' . $completedCount . ' approved admission'
+                    . ($completedCount === 1 ? '' : 's') . '.';
+            if ($skippedCount > 0) {
+                $skippedDetails = array_map(
+                    static fn (array $entry): string => '#' . $entry['admission_id'] . ': ' . $entry['reason'],
+                    array_slice($results['skipped'], 0, 10)
+                );
+                $message .= ' Left unchanged (' . $skippedCount . '): ' . implode('; ', $skippedDetails);
+                if ($skippedCount > count($skippedDetails)) {
+                    $message .= '; and ' . ($skippedCount - count($skippedDetails)) . ' more.';
+                }
+            }
+            if ($notificationFailures !== []) {
+                $message .= ' Registration notifications failed for admissions: '
+                    . implode(', ', array_map(
+                        static fn (int $id): string => '#' . $id,
+                        $notificationFailures
+                    )) . '.';
+            }
+            set_flash($skippedCount > 0 || $notificationFailures !== [] ? 'warning' : 'success', $message);
+        } elseif ($action === 'enrol') {
+            if ($configuration['academic_model'] === 'school') {
+                throw new DomainException('School enrolments are created automatically when an admission is approved.');
+            }
             $yearId = $configuration['active_academic_year_id'];
             if ($yearId === null) {
                 throw new DomainException('Select an active academic year before enrolling students.');
@@ -134,7 +190,9 @@ if ($activeYearId !== null) {
 
 render_app_page_start(
     'Student Enrolments',
-    'Enrol, place, withdraw, readmit, or promote students while retaining placement history.',
+    $model === 'school'
+        ? 'Review enrolments created automatically from approved admissions and manage placement history.'
+        : 'Enrol, place, withdraw, readmit, or promote students while retaining placement history.',
     'admin',
     ['admin-dashboard.css']
 );
@@ -149,7 +207,21 @@ render_app_page_start(
 <?php elseif ($placements === []): ?>
     <section class="dashboard-panel"><h2>Placement options required</h2><p>Add the year-specific classes, sections, programme terms, or coaching batches before enrolling students.</p><a class="btn btn-cobalt" href="<?php echo e(route_url('/admin/academics/classes')); ?>">Configure academic placements</a></section>
 <?php else: ?>
-    <?php if ($canEnrol): ?>
+    <?php if ($model === 'school'): ?>
+        <section class="dashboard-panel mb-4">
+            <h2>New school enrolments</h2>
+            <p class="mb-0">Approve an admission to create the student and enrol them in the matching active class and section. No separate enrolment step is needed.</p>
+            <?php if (!$admissionWorkflowReady): ?>
+                <p class="alert alert-warning mt-3 mb-0">Apply the admission workflow and conversion database updates before processing existing approvals.</p>
+            <?php elseif ($canCompleteExistingAdmissions): ?>
+                <form method="post" action="<?php echo e(route_url('/admin/academics/enrolments')); ?>" class="mt-3" onsubmit="return confirm('Complete enrolment for all eligible approved school admissions? Applications without a matching active placement will be left unchanged.')">
+                    <?php echo csrf_field(); ?><input type="hidden" name="action" value="complete_existing_admissions">
+                    <button class="btn btn-outline-primary" type="submit">Complete existing approved admissions</button>
+                </form>
+            <?php endif; ?>
+            <?php if (user_has_compatible_permission('admissions.view', 'admissions.manage')): ?><a class="btn btn-outline-primary mt-3" href="<?php echo e(route_url('/admin/admissions/index')); ?>">Review admissions</a><?php endif; ?>
+        </section>
+    <?php elseif ($canEnrol): ?>
         <section class="dashboard-panel mb-4" aria-labelledby="enrol-student-title">
             <h2 id="enrol-student-title">Enrol a student<?php if ($activeYearLabel !== null): ?> in <?php echo e($activeYearLabel); ?><?php endif; ?></h2>
             <?php if ($students === []): ?>

@@ -308,8 +308,6 @@ function parent_management_prepare_list_filters(
 
 function parent_management_get_summary(mysqli $db, int $institutionId): array
 {
-    $isSuperAdmin = parent_management_is_super_admin();
-    $institutionFilter = $isSuperAdmin ? '' : ' AND p.institution_id = ?';
     $statement = $db->prepare(
         'SELECT COUNT(DISTINCT p.id) AS total_count,
                 COUNT(DISTINCT IF(p.status = \'active\', p.id, NULL)) AS active_count,
@@ -321,11 +319,9 @@ function parent_management_get_summary(mysqli $db, int $institutionId): array
          LEFT JOIN parent_student_relationships psr
            ON psr.institution_id = p.institution_id
           AND psr.parent_id = p.id AND psr.status = \'active\'
-         WHERE u.user_type = \'parent\'' . $institutionFilter
+         WHERE u.user_type = \'parent\' AND p.institution_id = ?'
     );
-    if (!$isSuperAdmin) {
-        $statement->bind_param('i', $institutionId);
-    }
+    $statement->bind_param('i', $institutionId);
     $statement->execute();
     $summary = $statement->get_result()->fetch_assoc();
     $statement->close();

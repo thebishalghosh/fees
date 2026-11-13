@@ -164,6 +164,16 @@ $check($routePermission === ['students.create', 'students.manage'], 'Guard stude
 $routePermission = admin_route_permissions('payments/refunds.php', 'payments', 'refunds');
 $check($routePermission === ['payments.refund', 'payments.refund'], 'Keep refund access separate from payment viewing');
 $authSource = file_get_contents(__DIR__ . '/../includes/auth.php');
+$appConfigSource = file_get_contents(__DIR__ . '/../config/app.php');
+$check(
+    is_string($authSource)
+        && is_string($appConfigSource)
+        && str_contains($appConfigSource, '$environment === \'development\'')
+        && str_contains($appConfigSource, "['localhost', '127.0.0.1', '::1']")
+        && str_contains($appConfigSource, "'session_idle_timeout_seconds' => \$isLocalDevelopment ? 0 : 1800")
+        && str_contains($authSource, "\$idleTimeout > 0 && (int) \$record['idle_seconds'] > \$idleTimeout"),
+    'Disable idle expiry only for localhost development while retaining non-local and absolute session limits'
+);
 $check(
     is_string($authSource)
         && str_contains($authSource, '$institutionId = (int) $user[\'institution_id\'];')
@@ -177,6 +187,12 @@ $check(
     admin_route_permissions('academics/years.php', 'academics', 'years') === ['academic_years.create', 'academics.manage'],
     'Require academic-year creation permission for year creation'
 );
+$_POST = ['action' => 'complete_existing_admissions'];
+$check(
+    admin_route_permissions('academics/enrolments.php', 'academics', 'enrolments') === ['admissions.approve', 'admissions.manage'],
+    'Require admission-approval permission to complete existing school admissions'
+);
+$_POST = ['action' => 'create'];
 $check(
     admin_route_permissions('fees/categories.php', 'fees', 'categories') === ['fee_structures.create', 'fees.manage'],
     'Require fee-structure creation permission for category creation'
