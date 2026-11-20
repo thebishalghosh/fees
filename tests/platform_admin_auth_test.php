@@ -411,6 +411,14 @@ $check(
     'Render the institution manager inside the shared Platform Admin workspace'
 );
 $check(
+    is_string($authSource)
+        && str_contains($authSource, "safe_redirect('/platform-admin/login')")
+        && str_contains($authSource, 'redirect_platform_admin_to_login')
+        && str_contains($authSource, 'Your session has expired. Please sign in again.')
+        && str_contains($authSource, 'function require_platform_admin(bool $redirectToLoginOnFailure = true)'),
+    'Redirect expired platform sessions to the platform sign-in page'
+);
+$check(
     is_string($platformDashboardSource)
         && str_contains($platformDashboardSource, '($_GET[\'select_institution\'] ?? null) === \'1\'')
         && str_contains($platformDashboardSource, 'data-auto-show-toast')
@@ -448,9 +456,9 @@ $check(
     is_string($logoutEndpointSource)
         && str_contains($logoutEndpointSource, "require_http_methods(['POST'])")
         && str_contains($logoutEndpointSource, 'require_valid_csrf_token()')
-        && str_contains($logoutEndpointSource, 'require_platform_admin()')
-        && strpos($logoutEndpointSource, 'require_valid_csrf_token()') < strpos($logoutEndpointSource, 'require_platform_admin()')
-        && strpos($logoutEndpointSource, 'require_platform_admin()') < strpos($logoutEndpointSource, 'platform_admin_logout()'),
+        && str_contains($logoutEndpointSource, 'require_platform_admin(false)')
+        && strpos($logoutEndpointSource, 'require_valid_csrf_token()') < strpos($logoutEndpointSource, 'require_platform_admin(false)')
+        && strpos($logoutEndpointSource, 'require_platform_admin(false)') < strpos($logoutEndpointSource, 'platform_admin_logout()'),
     'Require POST, CSRF, and active platform identity before logout'
 );
 $check(

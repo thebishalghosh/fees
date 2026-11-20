@@ -243,9 +243,18 @@ function authenticated_role_is_valid(
         && $roleName === $userType;
 }
 
+function redirect_platform_admin_to_login(string $message): never
+{
+    clear_app_session();
+    start_app_session();
+    set_flash('warning', $message, 'platform_admin_auth');
+    safe_redirect('/platform-admin/login');
+}
+
 function require_login(): void
 {
-    if (current_platform_admin() !== null) {
+    if (current_platform_admin() !== null
+        || isset($_SESSION['platform_admin_session_id'], $_SESSION['platform_admin_session_token'])) {
         try {
             if (platform_admin_revalidate_session()) {
                 return;
@@ -256,8 +265,7 @@ function require_login(): void
                 'error_code' => $exception->getCode(),
             ]);
         }
-        http_response_code(401);
-        exit('Platform admin authentication required.');
+        redirect_platform_admin_to_login('Your session has expired. Please sign in again.');
     }
 
     $valid = false;
@@ -695,6 +703,27 @@ function admin_route_permissions(string $relativePath, string $section, string $
         }
     }
     if ($section === 'academics') {
+        if ($action === 'attendance-reports') {
+            if ($method === 'GET' && ($_GET['export'] ?? null) === 'csv') {
+                return ['attendance.export', 'academics.manage'];
+            }
+            if ($method === 'POST') {
+                return match ($_POST['action'] ?? null) {
+                    'save_thresholds' => ['institution_settings.edit', 'settings.manage'],
+                    'finalize_session' => ['attendance.edit', 'academics.manage'],
+                    default => ['attendance.edit', 'academics.manage'],
+                };
+            }
+            return ['attendance.view', 'academics.manage'];
+        }
+        if (in_array($action, ['timetables', 'timetable-setup'], true)) {
+            return $method === 'POST'
+                ? ['academic_years.edit', 'academics.manage']
+                : ['academic_years.view', 'academics.manage'];
+        }
+        if ($action === 'teacher-timetable') {
+            return ['attendance.view', 'academics.manage'];
+        }
         if ($action === 'create-class') {
             return ['classes.create', 'academics.manage'];
         }
@@ -974,10 +1003,21 @@ function platform_admin_session_has_permission(string $permission): bool
     return $admin !== null && in_array($permission, $admin['permissions'], true);
 }
 
-function require_platform_admin(): void
+function require_platform_admin(bool $redirectToLoginOnFailure = true): void
 {
     $admin = current_platform_admin();
-    if ($admin === null || !platform_admin_revalidate_session(db_connect())) {
+    if ($admin === null) {
+        if ($redirectToLoginOnFailure && current_user() === null) {
+            redirect_platform_admin_to_login('Sign in as a platform administrator to continue.');
+        }
+        http_response_code(401);
+        exit('Platform admin authentication required.');
+    }
+
+    if (!platform_admin_revalidate_session(db_connect())) {
+        if ($redirectToLoginOnFailure) {
+            redirect_platform_admin_to_login('Your session has expired. Please sign in again.');
+        }
         http_response_code(401);
         exit('Platform admin authentication required.');
     }

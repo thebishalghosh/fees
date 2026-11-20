@@ -1,0 +1,355 @@
+.timetable-setup-page {
+    display: grid;
+    gap: 1.1rem;
+    padding-bottom: 1.5rem;
+}
+
+.timetable-setup-alert {
+    margin: 0;
+}
+
+.timetable-setup-hero {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    padding: 1.5rem 1.65rem;
+    border: 1px solid #dfe8f5;
+    border-radius: 18px;
+    background:
+        radial-gradient(circle at 88% 18%, rgb(255 255 255 / 82%), transparent 26%),
+        linear-gradient(112deg, #edf4ff, #f8faff 68%, #f5f8fe);
+    box-shadow: 0 14px 32px -28px rgb(17 49 95 / 32%);
+}
+
+.timetable-setup-hero-copy {
+    min-width: 0;
+}
+
+.timetable-setup-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    margin-bottom: .45rem;
+    color: var(--brand-secondary);
+    font-size: .66rem;
+    font-weight: 750;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+}
+
+.timetable-setup-hero h2 {
+    margin: 0;
+    color: var(--ink);
+    font-size: clamp(1.25rem, 2vw, 1.65rem);
+    font-weight: 750;
+    letter-spacing: -.035em;
+}
+
+.timetable-setup-hero p {
+    max-width: 660px;
+    margin: .4rem 0 0;
+    color: var(--muted);
+    font-size: .82rem;
+}
+
+.timetable-setup-builder-link {
+    display: inline-flex;
+    min-height: 44px;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    gap: .5rem;
+    padding-inline: 1rem;
+    white-space: nowrap;
+}
+
+.timetable-setup-context,
+.timetable-setup-card {
+    display: block;
+    height: auto;
+    min-width: 0;
+    margin: 0;
+    padding: 1.25rem;
+    border-radius: 16px;
+}
+
+.timetable-setup-context {
+    display: grid;
+    grid-template-columns: minmax(210px, .7fr) minmax(0, 1.3fr);
+    align-items: center;
+    gap: 1rem 1.5rem;
+}
+
+.timetable-setup-context .timetable-setup-section-heading {
+    margin: 0;
+}
+
+.timetable-setup-context-form {
+    margin: 0;
+}
+
+.timetable-setup-context-form .btn {
+    min-height: 44px;
+}
+
+.timetable-setup-grid {
+    align-items: start;
+}
+
+.timetable-setup-grid > div {
+    min-width: 0;
+}
+
+.timetable-setup-section-heading {
+    display: flex;
+    align-items: flex-start;
+    gap: .75rem;
+    margin-bottom: 1.1rem;
+}
+
+.timetable-setup-section-icon {
+    display: grid;
+    width: 2.45rem;
+    height: 2.45rem;
+    flex: 0 0 auto;
+    place-items: center;
+    border: 1px solid color-mix(in srgb, var(--brand-primary) 12%, white);
+    border-radius: 12px;
+    color: var(--brand-primary);
+    background: color-mix(in srgb, var(--brand-primary) 7%, white);
+    font-size: 1.05rem;
+}
+
+.timetable-setup-section-heading h2 {
+    margin: .05rem 0 .22rem;
+    color: var(--ink);
+    font-size: .98rem;
+    font-weight: 730;
+    letter-spacing: -.015em;
+}
+
+.timetable-setup-optional {
+    display: inline-flex;
+    align-items: center;
+    margin-left: .35rem;
+    padding: .2rem .48rem;
+    border: 1px solid #dfe8f3;
+    border-radius: 999px;
+    color: #64748b;
+    background: #f5f8fc;
+    font-size: .58rem;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    vertical-align: middle;
+}
+
+.timetable-setup-section-heading p {
+    margin: 0;
+    color: var(--muted);
+    font-size: .73rem;
+    line-height: 1.5;
+}
+
+.timetable-setup-form {
+    padding: .9rem;
+    border: 1px solid #e6ebf3;
+    border-radius: 13px;
+    background: #f8faff;
+}
+
+.timetable-setup-form .form-label,
+.timetable-setup-classrooms form .form-label,
+.timetable-setup-schedule-picker .form-label {
+    margin-bottom: .35rem;
+    color: #52617a;
+    font-size: .7rem;
+    font-weight: 650;
+}
+
+.timetable-setup-page .form-control,
+.timetable-setup-page .form-select {
+    min-height: 41px;
+    border-radius: 9px;
+    font-size: .78rem;
+}
+
+.timetable-setup-page .btn {
+    min-height: 39px;
+    border-radius: 9px;
+    font-size: .76rem;
+    font-weight: 650;
+}
+
+.timetable-setup-page .btn-sm {
+    min-height: 32px;
+    padding: .35rem .65rem;
+    font-size: .68rem;
+}
+
+.timetable-setup-subheading {
+    margin: 0 0 .55rem;
+    color: #52617a;
+    font-size: .73rem;
+    font-weight: 700;
+}
+
+.timetable-setup-table-wrap .timetable-setup-subheading {
+    margin: 0;
+    padding: .7rem .75rem;
+    border-bottom: 1px solid #e6ebf3;
+    background: #f8faff;
+}
+
+.timetable-setup-table-wrap {
+    min-width: 0;
+    margin-top: .9rem;
+    overflow-x: auto;
+    border: 1px solid #e6ebf3;
+    border-radius: 12px;
+    background: #fff;
+}
+
+.timetable-setup-table-wrap .table {
+    min-width: 430px;
+    margin: 0;
+    font-size: .75rem;
+}
+
+.timetable-setup-table-wrap .table thead th {
+    padding: .7rem .75rem;
+    background: #f4f7fc;
+    font-size: .64rem;
+}
+
+.timetable-setup-table-wrap .table > :not(caption) > * > * {
+    padding: .65rem .75rem;
+}
+
+.timetable-setup-table-wrap tbody tr:last-child > * {
+    border-bottom-width: 0;
+}
+
+.timetable-setup-classrooms .timetable-setup-table-wrap form {
+    min-width: 720px;
+}
+
+.timetable-setup-periods > form > .btn,
+.timetable-setup-periods > form .btn {
+    min-height: 38px;
+}
+
+.timetable-setup-periods details summary {
+    width: fit-content;
+    color: var(--brand-secondary);
+    cursor: pointer;
+    font-size: .7rem;
+    font-weight: 650;
+}
+
+.timetable-setup-periods details form {
+    min-width: 620px;
+    padding: .8rem;
+    border: 1px solid #e6ebf3;
+    border-radius: 11px;
+    background: #f8faff;
+}
+
+.timetable-setup-periods details form:last-child {
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+.timetable-weekday-picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .45rem;
+    margin-bottom: .45rem;
+}
+
+.timetable-weekday-option {
+    position: relative;
+    cursor: pointer;
+}
+
+.timetable-weekday-option input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+}
+
+.timetable-weekday-option span {
+    display: grid;
+    min-width: 3.2rem;
+    min-height: 2.4rem;
+    place-items: center;
+    padding: .35rem .65rem;
+    border: 1px solid #d6dfec;
+    border-radius: 9px;
+    color: #53627a;
+    background: #fff;
+    font-size: .73rem;
+    font-weight: 650;
+    transition: color .15s ease, background .15s ease, border-color .15s ease;
+}
+
+.timetable-weekday-option input:checked + span {
+    border-color: var(--brand-primary);
+    color: var(--brand-primary);
+    background: color-mix(in srgb, var(--brand-primary) 8%, white);
+}
+
+.timetable-weekday-option input:focus-visible + span {
+    outline: 3px solid color-mix(in srgb, var(--brand-primary) 25%, transparent);
+    outline-offset: 2px;
+}
+
+@media (max-width: 991.98px) {
+    .timetable-setup-context {
+        grid-template-columns: 1fr;
+    }
+
+    .timetable-setup-context-form {
+        margin-top: .25rem;
+    }
+}
+
+@media (max-width: 640px) {
+    .timetable-setup-page {
+        gap: .8rem;
+    }
+
+    .timetable-setup-hero {
+        align-items: stretch;
+        flex-direction: column;
+        padding: 1.2rem;
+        border-radius: 15px;
+    }
+
+    .timetable-setup-builder-link {
+        width: 100%;
+    }
+
+    .timetable-setup-context,
+    .timetable-setup-card {
+        padding: 1rem;
+        border-radius: 14px;
+    }
+
+    .timetable-setup-section-heading {
+        gap: .6rem;
+    }
+
+    .timetable-setup-section-icon {
+        width: 2.2rem;
+        height: 2.2rem;
+    }
+
+    .timetable-setup-form {
+        padding: .75rem;
+    }
+}

@@ -1,0 +1,383 @@
+.timetable-builder-page {
+    display: grid;
+    gap: 1rem;
+    padding-bottom: 1.5rem;
+}
+
+.timetable-builder-page > .alert {
+    margin: 0;
+}
+
+.timetable-builder-page .card-panel {
+    display: block;
+    height: auto;
+    min-width: 0;
+    margin: 0;
+    padding: 1.3rem;
+    border-radius: 16px;
+}
+
+.timetable-builder-context {
+    background:
+        radial-gradient(circle at 92% 10%, rgb(255 255 255 / 84%), transparent 25%),
+        linear-gradient(112deg, #f0f5ff, #fff 76%);
+}
+
+.timetable-builder-context-heading {
+    align-items: center !important;
+}
+
+.timetable-builder-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: .38rem;
+    margin-bottom: .35rem;
+    color: var(--brand-secondary);
+    font-size: .65rem;
+    font-weight: 750;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+}
+
+.timetable-builder-context h2,
+.timetable-builder-cohort h2 {
+    margin: 0 0 .35rem;
+    color: var(--ink);
+    font-size: 1.12rem;
+    font-weight: 740;
+    letter-spacing: -.025em;
+}
+
+.timetable-builder-context-heading p,
+.timetable-builder-cohort-heading p {
+    max-width: 700px;
+    margin: 0;
+    color: var(--muted);
+    font-size: .78rem;
+    line-height: 1.55;
+}
+
+.timetable-builder-context-heading > a {
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    min-height: 42px;
+    padding-inline: .9rem;
+    border-radius: 9px;
+    font-size: .75rem;
+    font-weight: 650;
+    white-space: nowrap;
+}
+
+.timetable-builder-filter,
+.timetable-builder-version-filter {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e3eaf5;
+}
+
+.timetable-builder-filter .form-label,
+.timetable-builder-version-filter .form-label,
+.timetable-builder-entry-form .form-label {
+    margin-bottom: .35rem;
+    color: #53627a;
+    font-size: .7rem;
+    font-weight: 650;
+}
+
+.timetable-builder-page .form-control,
+.timetable-builder-page .form-select {
+    min-height: 42px;
+    border-radius: 9px;
+    font-size: .78rem;
+}
+
+.timetable-builder-page .btn {
+    min-height: 39px;
+    border-radius: 9px;
+    font-size: .75rem;
+    font-weight: 650;
+}
+
+.timetable-builder-cohort-heading {
+    align-items: center !important;
+}
+
+.timetable-builder-cohort h2 {
+    font-size: 1.25rem;
+}
+
+.timetable-builder-cohort-divider {
+    padding-inline: .45rem;
+    color: #9aa6b8;
+    font-weight: 400;
+}
+
+.timetable-builder-create-form .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .4rem;
+    min-height: 43px;
+    padding-inline: 1rem;
+}
+
+.timetable-builder-version-filter {
+    max-width: 650px;
+}
+
+.timetable-builder-page .timetable-builder-empty-state {
+    display: flex;
+    align-items: center;
+    gap: .9rem;
+    padding: 1.15rem 1.25rem;
+    background: #fff;
+}
+
+.timetable-builder-empty-icon {
+    display: grid;
+    width: 2.5rem;
+    height: 2.5rem;
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: 12px;
+    color: var(--brand-primary);
+    background: color-mix(in srgb, var(--brand-primary) 8%, white);
+    font-size: 1.1rem;
+}
+
+.timetable-builder-empty-state h2 {
+    margin: 0 0 .2rem;
+    color: var(--ink);
+    font-size: .88rem;
+    font-weight: 720;
+}
+
+.timetable-builder-empty-state p {
+    margin: 0;
+    color: var(--muted);
+    font-size: .74rem;
+}
+
+.timetable-builder-empty-state .btn {
+    flex: 0 0 auto;
+    margin-left: auto;
+}
+
+.timetable-builder-version-toolbar {
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #e8edf5;
+}
+
+.timetable-builder-version-info h2 {
+    margin: 0 0 .35rem;
+    color: var(--ink);
+    font-size: 1rem;
+    font-weight: 720;
+}
+
+.timetable-builder-version-info .badge {
+    padding: .38rem .62rem;
+    border-radius: 999px;
+    font-size: .66rem;
+    font-weight: 700;
+}
+
+.timetable-builder-actions {
+    align-items: center;
+}
+
+.timetable-builder-actions form {
+    margin: 0;
+}
+
+.timetable-builder-entry-form {
+    margin: 1rem 0 1.2rem;
+    padding: 1rem;
+    border: 1px solid #e2e9f3;
+    border-radius: 13px;
+    background: #f8faff;
+}
+
+.timetable-builder-entry-form .btn {
+    min-height: 41px;
+    padding-inline: 1rem;
+}
+
+.timetable-builder-table {
+    overflow-x: auto;
+    border: 1px solid #e5eaf2;
+    border-radius: 12px;
+}
+
+.timetable-builder-table .table {
+    min-width: 760px;
+    margin: 0;
+    font-size: .76rem;
+}
+
+.timetable-builder-table .table thead th {
+    padding: .75rem;
+    background: #f4f7fc;
+    font-size: .65rem;
+}
+
+.timetable-builder-table .table > :not(caption) > * > * {
+    padding: .72rem .75rem;
+}
+
+.timetable-week-view-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin: 1.15rem 0 .65rem;
+}
+
+.timetable-week-view-heading h3 {
+    margin: 0 0 .2rem;
+    color: var(--ink);
+    font-size: .9rem;
+    font-weight: 720;
+}
+
+.timetable-week-view-heading p {
+    margin: 0;
+    color: var(--muted);
+    font-size: .72rem;
+}
+
+.timetable-week-view .table {
+    min-width: 1120px;
+    table-layout: fixed;
+}
+
+.timetable-week-view .table th:first-child {
+    width: 110px;
+}
+
+.timetable-week-view .table td {
+    min-width: 145px;
+    vertical-align: top;
+}
+
+.timetable-week-slot {
+    display: grid;
+    justify-items: start;
+    gap: .22rem;
+    min-height: 92px;
+    padding: .58rem;
+    border: 1px solid #e4eaf3;
+    border-radius: 10px;
+    background: #f9fbfe;
+}
+
+.timetable-week-time,
+.timetable-week-slot small {
+    color: var(--muted);
+    font-size: .63rem;
+}
+
+.timetable-week-label {
+    color: #64748b;
+    font-size: .63rem;
+}
+
+.timetable-week-slot strong {
+    color: var(--ink);
+    font-size: .73rem;
+}
+
+.timetable-week-slot > span:not(.timetable-week-time):not(.timetable-week-label) {
+    color: #52617a;
+    font-size: .67rem;
+}
+
+.timetable-week-unassigned,
+.timetable-week-empty {
+    color: #8793a7;
+    font-size: .68rem;
+}
+
+.timetable-week-remove {
+    margin-top: .2rem;
+}
+
+.timetable-week-remove .btn {
+    min-height: 28px;
+    padding: .2rem .48rem;
+    font-size: .63rem;
+}
+
+.timetable-builder-empty {
+    display: grid;
+    justify-items: center;
+    gap: .4rem;
+    margin-top: 1rem;
+    padding: 2rem 1rem;
+    border: 1px dashed #cbd6e5;
+    border-radius: 13px;
+    color: var(--muted);
+    background: #f9fbfe;
+    text-align: center;
+}
+
+.timetable-builder-empty > i {
+    margin-bottom: .15rem;
+    color: var(--brand-primary);
+    font-size: 1.5rem;
+}
+
+.timetable-builder-empty strong {
+    color: var(--ink);
+    font-size: .85rem;
+}
+
+.timetable-builder-empty span {
+    font-size: .74rem;
+}
+
+@media (max-width: 767.98px) {
+    .timetable-builder-page .card-panel {
+        padding: 1rem;
+        border-radius: 14px;
+    }
+
+    .timetable-builder-context-heading,
+    .timetable-builder-cohort-heading {
+        align-items: stretch !important;
+        flex-direction: column;
+    }
+
+    .timetable-builder-context-heading > a {
+        justify-content: center;
+        width: 100%;
+    }
+
+    .timetable-builder-actions {
+        width: 100%;
+    }
+
+    .timetable-builder-actions form,
+    .timetable-builder-actions .btn {
+        flex: 1 1 auto;
+    }
+
+    .timetable-builder-actions .btn {
+        width: 100%;
+    }
+
+    .timetable-builder-entry-form {
+        padding: .8rem;
+    }
+
+    .timetable-builder-empty-state {
+        align-items: flex-start;
+        flex-wrap: wrap;
+    }
+
+    .timetable-builder-empty-state .btn {
+        width: 100%;
+        margin-left: 0;
+    }
+}

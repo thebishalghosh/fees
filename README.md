@@ -137,13 +137,26 @@ FEES_PARENT_CREATION_TEST_DB=fees_parent_creation_verify_YYYYMMDD_HHMMSS php tes
 
 ## Attendance management
 
-Admins with academic-management permission can mark attendance at
-**Admin → Academics → Attendance**, review history, and generate class and
-student attendance summaries. The register uses each student's existing
-institution, academic year, class, and batch assignment; only admitted or active
-students in an eligible batch and date range are included. Late is counted as
-attended in percentage calculations. Each student/batch/date has one record;
-corrections update that record and are written to the audit log.
+Admins with attendance-view permission can review **Admin → Academics →
+Attendance → Reports & analytics** for daily summaries, student histories,
+attendance shortages, and monthly class/section or batch comparisons. Reports
+are scoped to the authenticated institution and selected academic year. Late
+counts as attended; excused sessions are excluded from the percentage
+denominator. Exports use the active report filters and neutralize spreadsheet
+formulas.
+
+Academic-session attendance is included in trends and shortage calculations
+only after an authorized user closes a complete daily register. Closed session
+records cannot be corrected through the attendance register. Legacy batch
+attendance has no explicit session state, so a date is treated as finalized
+only when every admitted or active student in the batch has a record. Active
+institutional holidays are excluded, and unsubmitted dates are never counted
+as absences.
+
+Institutions can configure Good and Warning attendance thresholds from the
+shortage report when the user has institution-settings edit permission. Defaults
+are Good ≥75%, Warning ≥60%, and Critical <60%; values are stored in the
+existing institution-scoped `system_settings` table.
 
 For an existing database, back it up and apply
 `database/migrations/20261014_add_attendance_records.sql` once. The migration
@@ -152,14 +165,47 @@ constraints; it does not alter existing records. Rollback is destructive to
 new attendance entries and is documented in the migration itself. Do not run it
 against a database already initialized from the updated `database/schema.sql`.
 
-Run the focused check with:
+No schema migration is required for attendance reporting. Run the focused check
+with:
 
 ```text
 php tests/attendance_management_test.php
 ```
 
-The parent attendance page remains unavailable; this release adds admin
-attendance management only.
+Parent attendance access remains limited to active parent-child relationships
+that grant academic access.
+
+## Academic timetables
+
+The Academic → Timetables workspace supports year-scoped teacher/class/section
+and teacher/subject assignments, optional institution physical-room allocation, versioned period
+schedules, draft timetable editing, validation, publication history, and
+teacher/parent timetable views. Classes with active sections are scheduled by
+section; classes without sections can use a whole-class schedule. Published
+versions are read-only in the application; edits begin by cloning to a draft.
+Physical rooms are separate from academic classes and may be left unassigned.
+The existing batch-oriented `timetables` table is retained unchanged.
+
+To add a teacher, create an institution-scoped custom role named `Teacher` in
+Staff → Role Permissions and grant it Attendance → View for the teacher's
+timetable page. Then create the account in Staff → Add staff and select
+`Teacher`. The account remains a staff login and receives a linked instructor
+profile for timetable assignment.
+
+For an existing database, back it up and apply
+`database/migrations/20261120_add_timetable_infrastructure.sql` once. The
+migration only creates the eight additive timetable tables and does not migrate
+or rewrite legacy timetable records. Fresh installations should use the
+matching definitions in `database/schema.sql`.
+
+The academic integration test now includes timetable allocation, class and
+section scheduling, overlapping-period validation, publishing, immutability,
+cloning, and teacher/student view checks. Run it only against a disposable
+database containing the migrated academic schema:
+
+```text
+FEES_ACADEMIC_TEST_DB=fees_schema_verify_YYYYMMDD_HHMMSS php tests/academic_management_integration_test.php
+```
 
 ## Staff roles and permissions
 

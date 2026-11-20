@@ -2653,6 +2653,14 @@ function admin_panel_set_staff_status(
         $statement->bind_param('sii', $status, $targetUserId, $institutionId);
         $statement->execute();
         $statement->close();
+        $instructorStatus = $status === 'active' ? 'active' : 'inactive';
+        $statement = $db->prepare(
+            'UPDATE instructors SET status = ?
+             WHERE institution_id = ? AND user_id = ?'
+        );
+        $statement->bind_param('sii', $instructorStatus, $institutionId, $targetUserId);
+        $statement->execute();
+        $statement->close();
         if ($status !== 'active') {
             $statement = $db->prepare(
                 'UPDATE user_sessions SET revoked_at = CURRENT_TIMESTAMP

@@ -114,6 +114,7 @@ if ($academicConfiguration['academic_model'] !== null) {
     <nav class="attendance-tabs" aria-label="Attendance sections">
         <a class="<?php echo $sessionView === 'mark' ? 'is-active' : ''; ?>" href="<?php echo e(route_url('/admin/academics/attendance')); ?>"><i class="bi bi-pencil-square" aria-hidden="true"></i>Mark attendance</a>
         <a class="<?php echo $sessionView === 'history' ? 'is-active' : ''; ?>" href="<?php echo e(route_url('/admin/academics/attendance') . '?view=history'); ?>"><i class="bi bi-clock-history" aria-hidden="true"></i>Session history</a>
+        <a href="<?php echo e(route_url('/admin/academics/attendance-reports')); ?>"><i class="bi bi-bar-chart-line" aria-hidden="true"></i>Reports & analytics</a>
     </nav>
     <?php if ($activeYearId === null): ?>
         <section class="dashboard-panel"><h2>Active academic year required</h2><p>Select the current academic year before taking attendance.</p><a class="btn btn-cobalt" href="<?php echo e(route_url('/admin/academics/years')); ?>">Select academic year</a></section>
@@ -362,6 +363,7 @@ render_app_page_start(
     <?php if ($canManageAttendance): ?><a class="<?php echo $view === 'mark' ? 'is-active' : ''; ?>" href="<?php echo e(route_url('/admin/academics/attendance')); ?>"><i class="bi bi-pencil-square" aria-hidden="true"></i>Mark attendance</a><?php endif; ?>
     <a class="<?php echo $view === 'history' ? 'is-active' : ''; ?>" href="<?php echo e(route_url('/admin/academics/attendance') . '?view=history'); ?>"><i class="bi bi-clock-history" aria-hidden="true"></i>History</a>
     <a class="<?php echo $view === 'reports' ? 'is-active' : ''; ?>" href="<?php echo e(route_url('/admin/academics/attendance') . '?view=reports'); ?>"><i class="bi bi-bar-chart-line" aria-hidden="true"></i>Reports</a>
+    <a href="<?php echo e(route_url('/admin/academics/attendance-reports')); ?>"><i class="bi bi-graph-up-arrow" aria-hidden="true"></i>Reports & analytics</a>
 </nav>
 
 <?php if ($view === 'mark'): ?>

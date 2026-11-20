@@ -191,6 +191,59 @@ function rbac_assignable_staff_roles(mysqli $db, int $institutionId): array
     return $roles;
 }
 
+function rbac_sync_teacher_instructor_profile(
+    mysqli $db,
+    int $institutionId,
+    int $userId,
+    string $roleName,
+    string $fullName,
+    ?string $email,
+    ?string $phone,
+    string $userStatus
+): void {
+    $statement = $db->prepare(
+        'SELECT id FROM instructors
+         WHERE institution_id = ? AND user_id = ?
+         LIMIT 1 FOR UPDATE'
+    );
+    $statement->bind_param('ii', $institutionId, $userId);
+    $statement->execute();
+    $instructor = $statement->get_result()->fetch_assoc();
+    $statement->close();
+
+    if (is_array($instructor)) {
+        $statement = $db->prepare(
+            'UPDATE instructors SET full_name = ?, email = ?, phone = ?
+             WHERE institution_id = ? AND user_id = ?'
+        );
+        $statement->bind_param('sssii', $fullName, $email, $phone, $institutionId, $userId);
+        $statement->execute();
+        $statement->close();
+        return;
+    }
+
+    if (strcasecmp(trim($roleName), 'teacher') !== 0) {
+        return;
+    }
+
+    $instructorStatus = $userStatus === 'active' ? 'active' : 'inactive';
+    $statement = $db->prepare(
+        'INSERT INTO instructors (institution_id, user_id, full_name, email, phone, status)
+         VALUES (?, ?, ?, ?, ?, ?)'
+    );
+    $statement->bind_param(
+        'iissss',
+        $institutionId,
+        $userId,
+        $fullName,
+        $email,
+        $phone,
+        $instructorStatus
+    );
+    $statement->execute();
+    $statement->close();
+}
+
 function rbac_create_role(
     mysqli $db,
     int $institutionId,
@@ -498,7 +551,7 @@ function rbac_assign_staff_role(
     $db->begin_transaction();
     try {
         $statement = $db->prepare(
-            "SELECT id, role_id FROM users
+            "SELECT id, role_id, full_name, email, mobile, status FROM users
              WHERE id = ? AND institution_id = ? AND user_type = 'staff'
              LIMIT 1 FOR UPDATE"
         );
@@ -526,6 +579,16 @@ function rbac_assign_staff_role(
         $statement->bind_param('iii', $roleId, $staffUserId, $institutionId);
         $statement->execute();
         $statement->close();
+        rbac_sync_teacher_instructor_profile(
+            $db,
+            $institutionId,
+            $staffUserId,
+            (string) $role['name'],
+            (string) $staff['full_name'],
+            $staff['email'] === null ? null : (string) $staff['email'],
+            $staff['mobile'] === null ? null : (string) $staff['mobile'],
+            (string) $staff['status']
+        );
         write_audit_log(
             $db,
             $institutionId,

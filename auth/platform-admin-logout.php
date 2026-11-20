@@ -6,7 +6,7 @@ require_once __DIR__ . '/../includes/auth.php';
 
 require_http_methods(['POST']);
 require_valid_csrf_token();
-require_platform_admin();
+require_platform_admin(false);
 
 if (!platform_admin_logout()) {
 	http_response_code(401);

@@ -6,6 +6,8 @@ require_once __DIR__ . '/../services/admin-panel-service.php';
 require_once __DIR__ . '/../services/academic-management-service.php';
 require_once __DIR__ . '/../services/admission-conversion-service.php';
 require_once __DIR__ . '/../services/student-management-service.php';
+require_once __DIR__ . '/../services/staff-management-service.php';
+require_once __DIR__ . '/../services/timetable-management-service.php';
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 $config = db_config();
@@ -27,6 +29,9 @@ $db = new mysqli(
 $db->set_charset('utf8mb4');
 if (!academic_management_schema_ready($db)) {
     throw new RuntimeException('Academic schema is not ready.');
+}
+if (!timetable_management_schema_ready($db)) {
+    throw new RuntimeException('The timetable infrastructure migration has not been applied to the disposable test database.');
 }
 
 $checks = 0;
@@ -209,6 +214,397 @@ try {
             && (int) academic_test_scalar($db, 'SELECT COUNT(*) FROM section_subjects WHERE institution_id=? AND academic_year_id=? AND section_id=? AND subject_id=?', 'iiii', $institutionA, $year1, $section1, $subjectId) === 1,
         'Create and persist year, class, section, subject, and mapping'
     );
+
+    $teacherStaffUserId = academic_test_insert_id(
+        $db,
+        "INSERT INTO users (
+            institution_id, user_type, full_name, email, email_verified_at, status
+         ) VALUES (?, 'staff', ?, ?, CURRENT_TIMESTAMP, 'active')",
+        'iss',
+        $institutionA,
+        'Timetable Teacher ' . $suffix,
+        'teacher-' . $suffix . '@example.test'
+    );
+    rbac_sync_teacher_instructor_profile(
+        $db,
+        $institutionA,
+        $teacherStaffUserId,
+        'Teacher',
+        'Timetable Teacher ' . $suffix,
+        'teacher-' . $suffix . '@example.test',
+        '1234567890',
+        'active'
+    );
+    $teacherId = (int) academic_test_scalar(
+        $db,
+        'SELECT id FROM instructors WHERE institution_id = ? AND user_id = ?',
+        'ii',
+        $institutionA,
+        $teacherStaffUserId
+    );
+    rbac_sync_teacher_instructor_profile(
+        $db,
+        $institutionA,
+        $teacherStaffUserId,
+        'Teacher',
+        'Updated Timetable Teacher ' . $suffix,
+        'updated-teacher-' . $suffix . '@example.test',
+        '1234567890',
+        'active'
+    );
+    academic_test_check(
+        (int) academic_test_scalar(
+            $db,
+            'SELECT COUNT(*) FROM instructors WHERE institution_id = ? AND user_id = ?',
+            'ii',
+            $institutionA,
+            $teacherStaffUserId
+        ) === 1
+            && academic_test_scalar(
+                $db,
+                'SELECT full_name FROM instructors WHERE institution_id = ? AND id = ?',
+                'ii',
+                $institutionA,
+                $teacherId
+            ) === 'Updated Timetable Teacher ' . $suffix,
+        'Create and synchronize a teacher instructor profile for its staff account'
+    );
+    $teacherWithoutPortalId = academic_test_insert_id(
+        $db,
+        "INSERT INTO instructors (institution_id, full_name, status)
+         VALUES (?, ?, 'active')",
+        'is',
+        $institutionA,
+        'Timetable Teacher Two ' . $suffix
+    );
+    $classroomId = timetable_management_save_classroom(
+        $db,
+        $institutionA,
+        $actorA,
+        0,
+        'ROOM-' . $suffix,
+        'Main room ' . $suffix,
+        null,
+        30,
+        'active'
+    );
+    $classroomTwoId = timetable_management_save_classroom(
+        $db,
+        $institutionA,
+        $actorA,
+        0,
+        'ROOM2-' . $suffix,
+        'Second room ' . $suffix,
+        null,
+        25,
+        'active'
+    );
+    $periodScheduleId = timetable_management_create_period_schedule($db, $institutionA, $year1, $actorA);
+    $sixDayPeriodIds = timetable_management_add_periods_for_days(
+        $db,
+        $institutionA,
+        $year1,
+        $periodScheduleId,
+        ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+        1,
+        'Period 1',
+        '08:00',
+        '08:45',
+        'teaching'
+    );
+    $periodOneId = $sixDayPeriodIds[0];
+    academic_test_check(
+        count($sixDayPeriodIds) === 6
+            && (int) academic_test_scalar(
+                $db,
+                'SELECT COUNT(*) FROM timetable_periods
+                 WHERE institution_id = ? AND academic_year_id = ? AND period_schedule_id = ?
+                   AND period_number = 1',
+                'iii',
+                $institutionA,
+                $year1,
+                $periodScheduleId
+            ) === 6,
+        'Create one repeated period slot for each day in a six-day school week'
+    );
+    timetable_management_add_period(
+        $db,
+        $institutionA,
+        $year1,
+        $periodScheduleId,
+        'monday',
+        2,
+        'Break',
+        '08:45',
+        '09:00',
+        'break'
+    );
+    $periodThreeId = timetable_management_add_period(
+        $db,
+        $institutionA,
+        $year1,
+        $periodScheduleId,
+        'monday',
+        3,
+        'Period 2',
+        '09:00',
+        '09:45',
+        'teaching'
+    );
+    $bulkPeriodOverlapRejected = false;
+    try {
+        timetable_management_add_periods_for_days(
+            $db,
+            $institutionA,
+            $year1,
+            $periodScheduleId,
+            ['tuesday', 'monday'],
+            4,
+            'Bulk overlap',
+            '09:00',
+            '09:45',
+            'teaching'
+        );
+    } catch (DomainException) {
+        $bulkPeriodOverlapRejected = true;
+    }
+    academic_test_check(
+        $bulkPeriodOverlapRejected
+            && (int) academic_test_scalar(
+                $db,
+                "SELECT COUNT(*) FROM timetable_periods
+                 WHERE institution_id = ? AND academic_year_id = ? AND period_schedule_id = ?
+                   AND label = 'Bulk overlap'",
+                'iii',
+                $institutionA,
+                $year1,
+                $periodScheduleId
+            ) === 0,
+        'Roll back all selected weekdays when any weekly period slot conflicts'
+    );
+    $periodOverlapRejected = false;
+    try {
+        timetable_management_add_period(
+            $db,
+            $institutionA,
+            $year1,
+            $periodScheduleId,
+            'monday',
+            4,
+            'Overlapping period',
+            '08:30',
+            '09:10',
+            'teaching'
+        );
+    } catch (DomainException) {
+        $periodOverlapRejected = true;
+    }
+    timetable_management_activate_period_schedule($db, $institutionA, $year1, $periodScheduleId);
+    timetable_management_create_teacher_group_assignment($db, $institutionA, $actorA, $year1, $group1, $teacherId);
+    $teacherSubjectId = academic_test_scalar(
+        $db,
+        'SELECT id FROM teacher_group_assignments
+         WHERE institution_id = ? AND academic_year_id = ? AND academic_group_id = ? AND instructor_id = ?',
+        'iiii',
+        $institutionA,
+        $year1,
+        $group1,
+        $teacherId
+    );
+    $teacherSubjectAssignmentId = timetable_management_assign_teacher_subject(
+        $db,
+        $institutionA,
+        $actorA,
+        $year1,
+        $group1,
+        (int) $teacherSubjectId,
+        $subjectId
+    );
+    $sectionDraftId = timetable_management_create_timetable_draft($db, $institutionA, $actorA, $year1, $group1);
+    $sectionEntryId = timetable_management_add_entry(
+        $db,
+        $institutionA,
+        $sectionDraftId,
+        $periodOneId,
+        $teacherSubjectAssignmentId,
+        $classroomId,
+        'Section schedule'
+    );
+    $sectionValidationErrors = timetable_management_validate_draft($db, $institutionA, $sectionDraftId);
+    $sectionPublishErrors = timetable_management_publish_draft($db, $institutionA, $actorA, $sectionDraftId);
+    academic_test_check(
+        $periodOverlapRejected
+            && $sectionValidationErrors === []
+            && $sectionPublishErrors === []
+            && academic_test_scalar(
+                $db,
+                "SELECT status FROM timetable_versions WHERE institution_id = ? AND id = ?",
+                'ii',
+                $institutionA,
+                $sectionDraftId
+            ) === 'published',
+        'Create, validate, and publish a section timetable; reject overlapping periods'
+    );
+    $publishedEntryDeleteRejected = false;
+    try {
+        timetable_management_delete_entry($db, $institutionA, $sectionDraftId, $sectionEntryId);
+    } catch (DomainException) {
+        $publishedEntryDeleteRejected = true;
+    }
+    $clonedDraftId = timetable_management_clone_published($db, $institutionA, $actorA, $sectionDraftId);
+    academic_test_check(
+        $publishedEntryDeleteRejected
+            && (int) academic_test_scalar(
+                $db,
+                'SELECT COUNT(*) FROM timetable_entries WHERE institution_id = ? AND timetable_version_id = ?',
+                'ii',
+                $institutionA,
+                $sectionDraftId
+            ) === 1
+            && (int) academic_test_scalar(
+                $db,
+                'SELECT COUNT(*) FROM timetable_entries WHERE institution_id = ? AND timetable_version_id = ?',
+                'ii',
+                $institutionA,
+                $clonedDraftId
+            ) === 1,
+        'Keep published entries immutable and clone them into a new draft'
+    );
+    timetable_management_delete_draft($db, $institutionA, $clonedDraftId);
+
+    $classWithoutSections = academic_test_class(
+        $db,
+        $institutionA,
+        $actorA,
+        'Whole class ' . $suffix,
+        'WHOLE-' . $suffix
+    );
+    academic_management_create_class_offering($db, $institutionA, $actorA, $year1, $classWithoutSections);
+    $wholeClassGroupId = academic_management_ensure_group(
+        $db,
+        $institutionA,
+        $year1,
+        'class',
+        ['class_id' => $classWithoutSections]
+    );
+    academic_management_map_subject($db, $institutionA, $actorA, $year1, $classWithoutSections, $subjectId);
+    timetable_management_create_teacher_group_assignment(
+        $db,
+        $institutionA,
+        $actorA,
+        $year1,
+        $wholeClassGroupId,
+        $teacherWithoutPortalId
+    );
+    $wholeClassTeacherAssignmentId = (int) academic_test_scalar(
+        $db,
+        'SELECT id FROM teacher_group_assignments
+         WHERE institution_id = ? AND academic_year_id = ? AND academic_group_id = ? AND instructor_id = ?',
+        'iiii',
+        $institutionA,
+        $year1,
+        $wholeClassGroupId,
+        $teacherWithoutPortalId
+    );
+    $wholeClassSubjectId = timetable_management_assign_teacher_subject(
+        $db,
+        $institutionA,
+        $actorA,
+        $year1,
+        $wholeClassGroupId,
+        $wholeClassTeacherAssignmentId,
+        $subjectId
+    );
+    $wholeClassDraftId = timetable_management_create_timetable_draft(
+        $db,
+        $institutionA,
+        $actorA,
+        $year1,
+        $wholeClassGroupId
+    );
+    timetable_management_add_entry(
+        $db,
+        $institutionA,
+        $wholeClassDraftId,
+        $periodThreeId,
+        $wholeClassSubjectId,
+        $classroomTwoId
+    );
+    $wholeClassPublishErrors = timetable_management_publish_draft(
+        $db,
+        $institutionA,
+        $actorA,
+        $wholeClassDraftId
+    );
+    academic_test_check(
+        $wholeClassPublishErrors === []
+            && academic_test_scalar(
+                $db,
+                'SELECT scope_mode FROM academic_timetables WHERE institution_id = ? AND academic_year_id = ? AND class_id = ?',
+                'iii',
+                $institutionA,
+                $year1,
+                $classWithoutSections
+            ) === 'class',
+        'Publish a whole-class timetable for a class without sections'
+    );
+
+    [$sectionTwo, $groupTwo] = academic_test_section($db, $institutionA, $actorA, $year1, $classA, 'B', $suffix);
+    academic_management_map_subject($db, $institutionA, $actorA, $year1, $classA, $subjectId, $sectionTwo, 'include');
+    timetable_management_create_teacher_group_assignment($db, $institutionA, $actorA, $year1, $groupTwo, $teacherId);
+    $groupTwoTeacherAssignmentId = (int) academic_test_scalar(
+        $db,
+        'SELECT id FROM teacher_group_assignments
+         WHERE institution_id = ? AND academic_year_id = ? AND academic_group_id = ? AND instructor_id = ?',
+        'iiii',
+        $institutionA,
+        $year1,
+        $groupTwo,
+        $teacherId
+    );
+    $groupTwoSubjectAssignmentId = timetable_management_assign_teacher_subject(
+        $db,
+        $institutionA,
+        $actorA,
+        $year1,
+        $groupTwo,
+        $groupTwoTeacherAssignmentId,
+        $subjectId
+    );
+    $groupTwoDraftId = timetable_management_create_timetable_draft(
+        $db,
+        $institutionA,
+        $actorA,
+        $year1,
+        $groupTwo
+    );
+    $teacherRoomConflictRejected = false;
+    try {
+        timetable_management_add_entry(
+            $db,
+            $institutionA,
+            $groupTwoDraftId,
+            $periodOneId,
+            $groupTwoSubjectAssignmentId,
+            $classroomId
+        );
+    } catch (DomainException $exception) {
+        $teacherRoomConflictRejected = str_contains($exception->getMessage(), 'teacher')
+            && str_contains($exception->getMessage(), 'classroom');
+    }
+    academic_test_check(
+        $teacherRoomConflictRejected
+            && (int) academic_test_scalar(
+                $db,
+                'SELECT COUNT(*) FROM timetable_entries WHERE institution_id = ? AND timetable_version_id = ?',
+                'ii',
+                $institutionA,
+                $groupTwoDraftId
+            ) === 0,
+        'Prevent a teacher and classroom from being double-booked across published sections'
+    );
+    timetable_management_delete_draft($db, $institutionA, $groupTwoDraftId);
+
     academic_management_complete_configuration($db, $institutionA, $actorA);
     academic_test_check(
         academic_test_scalar($db, 'SELECT academic_configuration_status FROM institutions WHERE id=?', 'i', $institutionA) === 'configured',
@@ -246,6 +642,14 @@ try {
     academic_test_check(
         (int) academic_test_scalar($db, 'SELECT COUNT(*) FROM student_enrolment_placements WHERE institution_id=? AND student_enrolment_id IN (?, ?, ?)', 'iiii', $institutionA, $enrolment1, $enrolment2, $enrolment3) === 3,
         'Create initial enrolment placements'
+    );
+    $teacherTimetable = timetable_management_teacher_timetable($db, $institutionA, $teacherStaffUserId, $year1);
+    $studentTimetable = timetable_management_student_timetable($db, $institutionA, $student1);
+    academic_test_check(
+        count($teacherTimetable['entries']) === 1
+            && count($studentTimetable['entries']) === 1
+            && (int) $studentTimetable['group']['id'] === $group1,
+        'Resolve teacher and student timetable views from their institution-scoped identities'
     );
 
     academic_management_set_active_year($db, $institutionA, $year2, $actorA);
@@ -576,4 +980,4 @@ if ($failures !== []) {
     fwrite(STDERR, implode(PHP_EOL, $failures) . PHP_EOL);
     exit(1);
 }
-fwrite(STDOUT, 'Passed ' . $checks . ' academic and tenant integration checks.' . PHP_EOL);
+fwrite(STDOUT, 'Passed ' . $checks . ' academic, timetable, and tenant integration checks.' . PHP_EOL);

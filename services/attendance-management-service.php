@@ -802,6 +802,17 @@ function attendance_save_session(
         $statement->execute();
         $sessionId = (int) $statement->insert_id;
         $statement->close();
+        $statement = $db->prepare(
+            'SELECT status FROM attendance_sessions
+             WHERE institution_id = ? AND id = ? FOR UPDATE'
+        );
+        $statement->bind_param('ii', $institutionId, $sessionId);
+        $statement->execute();
+        $sessionStatus = $statement->get_result()->fetch_column();
+        $statement->close();
+        if ($sessionStatus !== 'open') {
+            throw new DomainException('Finalized or cancelled attendance cannot be changed.');
+        }
 
         $savedCount = 0;
         $databaseActorUserId = institution_audit_actor_user_id($actorUserId);

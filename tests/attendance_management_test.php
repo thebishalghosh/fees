@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . '/../services/attendance-management-service.php';
+require_once __DIR__ . '/../services/attendance-reporting-service.php';
 
 $checks = 0;
 $failures = [];
@@ -121,13 +121,113 @@ $check($invalidParentFiltersRejected, 'Reject invalid parent status and reversed
 $excusedParentFilter = attendance_validate_parent_filters(['status' => 'excused']);
 $check($excusedParentFilter['status'] === 'excused', 'Allow parents to filter excused session attendance');
 
+$reportFilters = attendance_reporting_validate_filters([
+    'report' => 'shortage',
+    'academic_year_id' => '8',
+    'academic_group_id' => '14',
+    'student_id' => '0',
+    'date_from' => '2026-09-01',
+    'date_to' => '2026-10-14',
+    'page' => '2',
+]);
+$check(
+    $reportFilters['academic_year_id'] === 8
+        && $reportFilters['academic_group_id'] === 14
+        && $reportFilters['page'] === 2,
+    'Validate and normalize report cohort, academic year, and pagination filters'
+);
+$invalidReportRejected = false;
+try {
+    attendance_reporting_validate_filters([
+        'report' => 'all_students',
+        'academic_year_id' => '8',
+        'date_from' => '2026-10-15',
+        'date_to' => '2026-10-14',
+    ]);
+} catch (InvalidArgumentException) {
+    $invalidReportRejected = true;
+}
+$check($invalidReportRejected, 'Reject unsupported report types and reversed date ranges');
+$thresholds = attendance_reporting_validate_thresholds([
+    'warning_threshold' => '60',
+    'good_threshold' => '75',
+]);
+$check($thresholds === ['warning' => 60, 'good' => 75], 'Validate configurable attendance shortage thresholds');
+$invalidThresholdsRejected = false;
+try {
+    attendance_reporting_validate_thresholds([
+        'warning_threshold' => '80',
+        'good_threshold' => '75',
+    ]);
+} catch (InvalidArgumentException) {
+    $invalidThresholdsRejected = true;
+}
+$check($invalidThresholdsRejected, 'Reject inconsistent shortage thresholds');
+$check(
+    attendance_reporting_percentage(5, 2, 10, 1) === 77.78
+        && attendance_reporting_percentage(0, 0, 1, 1) === null,
+    'Exclude excused records from attendance percentages and handle no assessable days'
+);
+$invalidReportTotalsRejected = false;
+try {
+    attendance_reporting_percentage(2, 2, 3, 0);
+} catch (InvalidArgumentException) {
+    $invalidReportTotalsRejected = true;
+}
+$check($invalidReportTotalsRejected, 'Reject attendance summaries with impossible recorded totals');
+$check(
+    attendance_reporting_threshold_status(75.0, $thresholds) === 'good'
+        && attendance_reporting_threshold_status(60.0, $thresholds) === 'warning'
+        && attendance_reporting_threshold_status(59.99, $thresholds) === 'critical',
+    'Classify attendance exactly at configured threshold boundaries'
+);
+$consistentlyPoor = attendance_reporting_detect_consistently_poor([
+    ['student_id' => 3, 'month' => '2026-01', 'percentage' => 59.0],
+    ['student_id' => 3, 'month' => '2026-02', 'percentage' => 59.0],
+    ['student_id' => 3, 'month' => '2026-03', 'percentage' => 59.0],
+    ['student_id' => 3, 'month' => '2026-04', 'percentage' => 80.0],
+    ['student_id' => 4, 'month' => '2026-01', 'percentage' => 59.0],
+    ['student_id' => 4, 'month' => '2026-03', 'percentage' => 59.0],
+    ['student_id' => 4, 'month' => '2026-04', 'percentage' => 59.0],
+], 60);
+$check($consistentlyPoor === [3], 'Identify three consecutive low-attendance months without bridging missing months');
+$check(
+    attendance_reporting_csv_value('=1+1') === "'=1+1"
+        && attendance_reporting_csv_value(" \t@SUM(A1)") === "' \t@SUM(A1)"
+        && attendance_reporting_csv_value('-42') === '-42'
+        && attendance_reporting_csv_value('Student, One') === 'Student, One',
+    'Neutralize spreadsheet formula injection without altering numeric values'
+);
+$csvStream = fopen('php://temp', 'w+');
+if ($csvStream === false) {
+    throw new RuntimeException('CSV test stream could not be opened.');
+}
+fputcsv(
+    $csvStream,
+    [attendance_reporting_csv_value('=1+1'), attendance_reporting_csv_value('Student, One')],
+    ',',
+    '"',
+    ''
+);
+rewind($csvStream);
+$csvLine = fgets($csvStream);
+fclose($csvStream);
+$check(
+    is_string($csvLine) && str_contains($csvLine, "'=1+1") && str_contains($csvLine, '"Student, One"'),
+    'Quote exported CSV fields and retain spreadsheet-safe cell values'
+);
+
 $service = file_get_contents(__DIR__ . '/../services/attendance-management-service.php');
+$reportingService = file_get_contents(__DIR__ . '/../services/attendance-reporting-service.php');
 $route = file_get_contents(__DIR__ . '/../admin/academics/attendance.php');
+$reportRoute = file_get_contents(__DIR__ . '/../admin/academics/attendance-reports.php');
 $parentRoute = file_get_contents(__DIR__ . '/../parent/attendance.php');
 $schema = file_get_contents(__DIR__ . '/../database/schema.sql');
 $migration = file_get_contents(__DIR__ . '/../database/migrations/20261014_add_attendance_records.sql');
 $sidebar = file_get_contents(__DIR__ . '/../includes/layouts/sidebar.php');
-$readable = is_string($service) && is_string($route) && is_string($parentRoute) && is_string($schema)
+$auth = file_get_contents(__DIR__ . '/../includes/auth.php');
+$readable = is_string($service) && is_string($reportingService) && is_string($route)
+    && is_string($reportRoute) && is_string($auth) && is_string($parentRoute) && is_string($schema)
     && is_string($migration) && is_string($sidebar);
 $check($readable, 'Read attendance service, route, schema, migration, and navigation');
 
@@ -183,6 +283,26 @@ if ($readable) {
             && str_contains($parentRoute, "'excused'")
             && str_contains($parentRoute, 'attendance_parent_list_records('),
         'Show legacy and academic-session attendance only to the authenticated parent with academic access'
+    );
+    $check(
+        str_contains($reportingService, "session.status = 'closed'")
+            && str_contains($reportingService, 'attendance_reporting_holiday_condition')
+            && str_contains($reportingService, 'WHERE holiday.institution_id = $institutionExpression')
+            && str_contains($reportRoute, 'admin_panel_institution_id()'),
+        'Count only institution-scoped finalized attendance and exclude active holidays'
+    );
+    $check(
+        str_contains($reportRoute, 'attendance_reporting_close_session(')
+            && str_contains($service, 'Finalized or cancelled attendance cannot be changed.')
+            && str_contains($reportingService, 'attendance_reporting_legacy_finalized_days_subquery'),
+        'Finalize complete session registers and preserve finalized legacy attendance history'
+    );
+    $check(
+        str_contains($auth, "'attendance.export', 'academics.manage'")
+            && str_contains($auth, "'institution_settings.edit', 'settings.manage'")
+            && str_contains($reportRoute, 'attendance.export')
+            && str_contains($reportRoute, 'require_valid_csrf_token()'),
+        'Protect report export and threshold/finalization actions with existing permissions and CSRF'
     );
 }
 

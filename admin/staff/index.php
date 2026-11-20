@@ -255,6 +255,7 @@ render_app_page_start('Staff & Administrators', 'Manage institution staff accoun
                             <option value="<?php echo e((string) $role['id']); ?>"<?php echo (string) ($formValues['role_id'] ?? '') === (string) $role['id'] ? ' selected' : ''; ?>><?php echo e((string) $role['name']); ?></option>
                         <?php endforeach; ?>
                     </select>
+                    <small class="form-text">To add a teacher, choose the Teacher role. If it is missing, create it in <a href="<?php echo e(route_url('/admin/staff/permissions')); ?>">Role permissions</a> and grant Attendance → View for timetable access. A linked instructor profile is created automatically.</small>
                 </div>
             <?php else: ?>
                 <input type="hidden" name="role_id" value="<?php echo e((string) ($formAccount['role_id'] ?? '')); ?>">

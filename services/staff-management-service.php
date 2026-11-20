@@ -145,6 +145,17 @@ function staff_management_create(
         $statement->execute();
         $statement->close();
 
+        rbac_sync_teacher_instructor_profile(
+            $db,
+            $institutionId,
+            $userId,
+            (string) $role['name'],
+            $fullName,
+            $email,
+            $mobile === null ? null : (string) $mobile,
+            $status
+        );
+
         write_audit_log(
             $db,
             $institutionId,
@@ -187,7 +198,7 @@ function staff_management_update(
     $db->begin_transaction();
     try {
         $statement = $db->prepare(
-            "SELECT id, email, full_name, mobile, status
+            "SELECT id, role_id, email, full_name, mobile, status
              FROM users
              WHERE id = ? AND institution_id = ? AND user_type = 'staff'
              LIMIT 1 FOR UPDATE"
@@ -227,6 +238,20 @@ function staff_management_update(
         $statement->bind_param('iiss', $institutionId, $staffUserId, $employeeCode, $mobile);
         $statement->execute();
         $statement->close();
+
+        $role = $before['role_id'] === null
+            ? null
+            : rbac_role_for_institution($db, (int) $before['role_id'], $institutionId);
+        rbac_sync_teacher_instructor_profile(
+            $db,
+            $institutionId,
+            $staffUserId,
+            is_array($role) ? (string) $role['name'] : '',
+            $fullName,
+            $email,
+            $mobile === null ? null : (string) $mobile,
+            (string) $before['status']
+        );
 
         write_audit_log(
             $db,
